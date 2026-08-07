@@ -1,6 +1,17 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.db.mongodb import connect_to_mongo, close_mongo_connection
+from app.features.health.routers import router as health_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Connect to MongoDB
+    await connect_to_mongo()
+    yield
+    # Shutdown: Close connection
+    await close_mongo_connection()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -8,6 +19,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+    lifespan=lifespan,
 )
 
 # CORS configuration
@@ -19,13 +31,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include Routers
+app.include_router(health_router)
 
-@app.get("/", tags=["Health"])
+
+@app.get("/", tags=["Root"])
 async def root():
     return {
-        "status": "healthy",
         "project": settings.PROJECT_NAME,
-        "message": "Welcome to RiskLens API server"
+        "message": "Welcome to RiskLens API server. Access /health for service status, or /docs for API documentation."
     }
 
 

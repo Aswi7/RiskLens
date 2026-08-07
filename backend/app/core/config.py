@@ -1,5 +1,4 @@
-from typing import List, Union
-from pydantic import AnyHttpUrl, validator
+from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,8 +17,11 @@ class Settings(BaseSettings):
     def cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
+    # Security Settings
+    JWT_SECRET: str = "change_me_in_production"
+
     # Database Settings
-    MONGO_URI: str = "mongodb://localhost:27017"
+    MONGODB_URI: str = "mongodb://localhost:27017"
     MONGO_DB_NAME: str = "risklens_db"
 
     # External APIs

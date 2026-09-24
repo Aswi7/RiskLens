@@ -1,21 +1,37 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.core.config import settings
 from app.db.mongodb import connect_to_mongo, close_mongo_connection
+from app.ml.loader import ml_loader
 from app.features.health.routers import router as health_router
+from app.features.auth.routers import router as auth_router
+from app.features.predictions.routers import router as predictions_router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("risklens.main")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Connect to MongoDB
+    # Startup: Connect to MongoDB & Load ML Models ONCE
+    logger.info("Starting RiskLens API server...")
     await connect_to_mongo()
+    ml_loader.load_artifacts()
     yield
-    # Shutdown: Close connection
+    # Shutdown: Close DB connections
+    logger.info("Shutting down RiskLens API server...")
     await close_mongo_connection()
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="RiskLens Multi-Disease Early Prediction Health Platform Backend API",
+    description="RiskLens Multi-Disease Early Prediction & SHAP Explainability API",
     version="1.0.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
@@ -32,6 +48,8 @@ app.add_middleware(
 )
 
 # Include Routers
+app.include_router(auth_router)
+app.include_router(predictions_router)
 app.include_router(health_router)
 
 
@@ -39,7 +57,7 @@ app.include_router(health_router)
 async def root():
     return {
         "project": settings.PROJECT_NAME,
-        "message": "Welcome to RiskLens API server. Access /health for service status, or /docs for API documentation."
+        "message": "Welcome to RiskLens API server. Access /health for status, or /docs for interactive API documentation."
     }
 
 

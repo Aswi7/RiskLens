@@ -1,0 +1,48 @@
+{
+  "model_type": "LogisticRegression",
+  "model_selection_reasoning": "XGBoost and Logistic Regression were both trained and compared via 5-fold cross-validation. Logistic Regression achieved a comparable-to-slightly-better mean ROC-AUC (0.8520 vs 0.8359), consistent with simpler models often generalizing better on small datasets (303 rows). Logistic Regression was selected as the final model based on this evidence, not by default.",
+  "requires_scaling": true,
+  "scaler_file": "heart_scaler.joblib",
+  "features_original": [
+    "age",
+    "sex",
+    "cp",
+    "trestbps",
+    "chol",
+    "fbs",
+    "exang"
+  ],
+  "features_encoded": [
+    "age",
+    "sex",
+    "trestbps",
+    "chol",
+    "fbs",
+    "exang",
+    "cp_0",
+    "cp_1",
+    "cp_2",
+    "cp_3"
+  ],
+  "categorical_encoding": {
+    "cp": "one-hot encoded into cp_0, cp_1, cp_2, cp_3 (unordered categories, not ordinal)"
+  },
+  "target": "target",
+  "scale_pos_weight_note": "Class balance was 54.5%/45.5% (near-balanced), unlike the Diabetes dataset's 86%/14% split. scale_pos_weight was computed (0.833) but had minimal effect given how close to balanced the classes already were.",
+  "metrics": {
+    "test_split_roc_auc": 0.8149,
+    "cv_roc_auc_mean": 0.852,
+    "cv_roc_auc_std": 0.0298
+  },
+  "dataset": "UCI Heart Disease (Cleveland)",
+  "dataset_notes": "Only 303 rows - substantially smaller than the Diabetes model's 253,680 rows. Cross-validation showed much higher variance (std 0.0298 vs 0.0027 for Diabetes), reflecting this scale asymmetry. Predictions from this model should be treated with more caution / framed as a more preliminary screening signal.",
+  "excluded_features": [
+    "restecg",
+    "thalach",
+    "oldpeak",
+    "slope",
+    "ca",
+    "thal"
+  ],
+  "exclusion_reason": "These fields require clinical testing (ECG, stress test) that the app's users will not have access to without a lab visit."
+}

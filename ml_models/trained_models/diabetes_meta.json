@@ -1,0 +1,43 @@
+{
+  "model_type": "XGBoost",
+  "features": [
+    "Sex",
+    "Age",
+    "BMI",
+    "HighBP",
+    "HighChol",
+    "Smoker",
+    "PhysActivity",
+    "Fruits",
+    "Veggies",
+    "HvyAlcoholConsump",
+    "Stroke",
+    "HeartDiseaseorAttack",
+    "DiffWalk",
+    "GenHlth",
+    "MentHlth",
+    "PhysHlth"
+  ],
+  "target": "Diabetes_binary",
+  "decision_threshold": 0.4,
+  "scale_pos_weight": 6.176998974431517,
+  "metrics": {
+    "accuracy": 0.7181,
+    "precision": 0.3037,
+    "recall": 0.7918,
+    "f1": 0.439,
+    "roc_auc": 0.8248,
+    "cv_roc_auc_mean": 0.828,
+    "cv_roc_auc_std": 0.0027
+  },
+  "dataset": "CDC Diabetes Health Indicators (BRFSS 2015)",
+  "dataset_notes": "Self-reported survey data, not lab-confirmed. Age, Education, and Income are pre-bucketed categorical codes, not raw values - Age bucket scheme must be replicated at inference time.",
+  "excluded_features": [
+    "Education",
+    "Income",
+    "CholCheck",
+    "AnyHealthcare",
+    "NoDocbcCost"
+  ],
+  "exclusion_reason": "Dropped socioeconomic/healthcare-access proxies not central to physiological disease risk, and not collected by the app's intake form."
+}

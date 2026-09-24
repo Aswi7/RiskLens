@@ -19,7 +19,7 @@ ENV/
 
 # Saved models
 *.joblib
-ml_models/trained_models/*
+!ml_models/trained_models/*.json
 !ml_models/trained_models/.gitkeep
 
 # Heavy datasets

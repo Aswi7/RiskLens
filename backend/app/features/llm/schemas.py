@@ -2,33 +2,21 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 
-class RiskDriverItem(BaseModel):
-    feature: str = Field(..., description="Feature name, e.g., HighBP, BMI, Age, chol")
-    impact: float = Field(..., description="SHAP feature importance value")
-    description: str = Field(..., description="User-friendly explanation of how this factor influences disease risk")
-
-
-class LifestyleRecommendationItem(BaseModel):
-    category: str = Field(..., description="Category: Diet, Exercise, Weight Management, Monitoring, Medical Consultation")
-    title: str = Field(..., description="Clear title of the recommendation")
-    action: str = Field(..., description="Specific, actionable lifestyle guidance")
-    rationale: str = Field(..., description="Why this action helps mitigate the identified SHAP risk driver")
-
-
 class RecommendationRequest(BaseModel):
     prediction_id: Optional[str] = Field(None, description="Optional ID of a saved prediction record in MongoDB")
-    input_payload: Optional[Dict[str, Any]] = Field(None, description="Direct input payload if prediction_id is not provided")
-    results: Optional[Dict[str, Any]] = Field(None, description="Direct prediction results if prediction_id is not provided")
+    input_payload: Optional[Dict[str, Any]] = Field(None, description="Direct input payload if prediction_id is omitted")
+    results: Optional[Dict[str, Any]] = Field(None, description="Direct prediction results if prediction_id is omitted")
 
 
 class RecommendationResponse(BaseModel):
-    executiveSummary: str = Field(..., description="High-level risk summary and key takeaways")
-    riskDriversBreakdown: List[RiskDriverItem] = Field(..., description="SHAP-grounded risk drivers breakdown")
-    lifestyleRecommendations: List[LifestyleRecommendationItem] = Field(..., description="Targeted actionable lifestyle interventions")
-    doctorQuestions: List[str] = Field(..., description="Key questions to discuss with a physician")
+    diet: List[str] = Field(..., description="Targeted dietary interventions grounded in SHAP drivers")
+    exercise: List[str] = Field(..., description="Targeted physical activity guidance")
+    sleep: str = Field(..., description="Sleep and lifestyle recovery guidance")
+    urgency: str = Field(..., description="'low' | 'moderate' | 'high'")
+    sharedRiskFactors: Optional[List[str]] = Field(None, description="Shared risk factors if both disease risks are elevated")
     disclaimer: str = Field(
-        default="RiskLens provides statistical risk estimates and educational guidance for informational purposes only. It is not a clinical diagnosis or medical prescription. Always consult a qualified healthcare provider for personal medical decisions.",
-        description="Standard medical safety disclaimer"
+        default="RiskLens provides statistical risk estimates and educational guidance for informational purposes only. It is not a clinical diagnosis or medical prescription. Always consult a qualified physician for personalized medical decisions.",
+        description="Medical safety disclaimer"
     )
 
 
@@ -46,7 +34,8 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str = Field(..., description="Assistant response content")
     isEmergency: bool = Field(False, description="True if acute emergency red flags were detected")
+    skippedLLM: bool = Field(False, description="True if LLM call was skipped due to pre-safety filter match")
     disclaimer: str = Field(
-        default="RiskLens health assistant provides general information only. Seek immediate emergency medical care for acute symptoms.",
+        default="RiskLens health assistant provides general educational information only. Seek immediate medical care for emergency symptoms or consult your doctor for prescription guidance.",
         description="Medical safety disclaimer"
     )

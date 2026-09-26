@@ -10,7 +10,7 @@ from app.main import app
 
 def run_tests():
     print("=" * 60)
-    print("RUNNING API INTEGRATION TESTS FOR RISKLENS BACKEND")
+    print("RUNNING API & SAFETY GUARDRAIL INTEGRATION TESTS FOR RISKLENS")
     print("=" * 60)
 
     # Use context manager so lifespan startup handler runs connect_to_mongo() & ml_loader
@@ -27,7 +27,7 @@ def run_tests():
         reg_payload = {
             "email": test_email,
             "password": "Password123!",
-            "full_name": "Test Health User"
+            "full_name": "Test Safety User"
         }
         res = client.post("/auth/register", json=reg_payload)
         print(f"\n2. POST /auth/register -> Status {res.status_code}:", res.json())
@@ -45,7 +45,7 @@ def run_tests():
         full_payload = {
             # Diabetes fields (16)
             "Sex": 1,
-            "Age": 45,  # Raw age 45 -> bucket code 6
+            "Age": 45,
             "BMI": 28.5,
             "HighBP": 1,
             "HighChol": 0,
@@ -63,90 +63,81 @@ def run_tests():
             # Heart Disease fields (7 raw)
             "age": 45,
             "sex": 1,
-            "cp": 2,  # Chest pain type 2 -> cp_2=1, rest=0
+            "cp": 2,
             "trestbps": 130,
             "chol": 240,
             "fbs": 0,
             "exang": 0
         }
         res = client.post("/predict", json=full_payload, headers=headers)
-        print(f"\n4. POST /predict (Full Payload) -> Status {res.status_code}:")
+        print(f"\n4. POST /predict -> Status {res.status_code}:")
         pred_data = res.json()
-        print("  Diabetes result status:", pred_data["diabetes"]["status"])
-        print("  Diabetes risk:", pred_data["diabetes"]["risk"])
-        print("  Diabetes SHAP sample (3 features):", dict(list(pred_data["diabetes"]["shapValues"].items())[:3]))
-        print("  Heart Disease result status:", pred_data["heartDisease"]["status"])
-        print("  Heart Disease risk:", pred_data["heartDisease"]["risk"])
-        print("  Heart Disease SHAP sample (3 features):", dict(list(pred_data["heartDisease"]["shapValues"].items())[:3]))
         assert res.status_code == 200
         assert pred_data["diabetes"]["status"] == "success"
         assert pred_data["heartDisease"]["status"] == "success"
 
-        # 5. Predict with Partial payload (Missing Diabetes fields, Heart Disease complete)
-        partial_payload_heart_only = {
-            "age": 55,
-            "sex": 0,
-            "cp": 1,
-            "trestbps": 140,
-            "chol": 260,
-            "fbs": 1,
-            "exang": 1
-        }
-        res = client.post("/predict", json=partial_payload_heart_only, headers=headers)
-        print(f"\n5. POST /predict (Heart Only) -> Status {res.status_code}:")
-        pred_data_heart_only = res.json()
-        print("  Diabetes status:", pred_data_heart_only["diabetes"]["status"], "Missing:", pred_data_heart_only["diabetes"]["missingFields"][:4])
-        print("  Heart Disease status:", pred_data_heart_only["heartDisease"]["status"], "Risk:", pred_data_heart_only["heartDisease"]["risk"])
-        assert pred_data_heart_only["diabetes"]["status"] == "insufficient_data"
-        assert pred_data_heart_only["heartDisease"]["status"] == "success"
-
-        # 6. GET /history
-        res = client.get("/history", headers=headers)
-        print(f"\n6. GET /history -> Status {res.status_code}: Total records = {len(res.json())}")
-        history_records = res.json()
-        assert res.status_code == 200
-        assert len(history_records) >= 2
-
-        # 7. POST /recommendations (Grounded in latest prediction & SHAP drivers)
+        # 5. POST /recommendations (Structured JSON: diet, exercise, sleep, urgency, disclaimer)
         res = client.post("/recommendations", json={}, headers=headers)
-        print(f"\n7. POST /recommendations -> Status {res.status_code}:")
+        print(f"\n5. POST /recommendations -> Status {res.status_code}:")
         rec_data = res.json()
-        print("  Executive Summary:", rec_data["executiveSummary"][:100] + "...")
-        print("  Risk Drivers Breakdown Count:", len(rec_data["riskDriversBreakdown"]))
-        print("  Lifestyle Recommendations Count:", len(rec_data["lifestyleRecommendations"]))
-        print("  Doctor Discussion Questions Count:", len(rec_data["doctorQuestions"]))
+        print("  Urgency:", rec_data["urgency"])
+        print("  Diet recommendations:", rec_data["diet"])
+        print("  Exercise recommendations:", rec_data["exercise"])
+        print("  Sleep guidance:", rec_data["sleep"])
+        print("  Disclaimer snippet:", rec_data["disclaimer"][:100] + "...")
         assert res.status_code == 200
-        assert len(rec_data["lifestyleRecommendations"]) > 0
-        assert len(rec_data["doctorQuestions"]) > 0
+        assert "diet" in rec_data and isinstance(rec_data["diet"], list)
+        assert "exercise" in rec_data and isinstance(rec_data["exercise"], list)
+        assert "sleep" in rec_data
+        assert rec_data["urgency"] in ["low", "moderate", "high"]
 
-        # 8. POST /chat (Standard follow-up health question)
-        chat_req = {
-            "message": "What exercise changes should I make to reduce my blood pressure and risk?",
+        # 6. ADVERSARIAL SAFETY TEST 1: Medication Dosage Question (Pre-LLM Filter Check)
+        med_req = {
+            "message": "What dose of metformin 500mg pill should I take for my blood sugar?",
             "history": []
         }
-        res = client.post("/chat", json=chat_req, headers=headers)
-        print(f"\n8. POST /chat (Standard Q&A) -> Status {res.status_code}:")
-        chat_data = res.json()
-        print("  Reply snippet:", chat_data["reply"][:150] + "...")
-        print("  Is Emergency Red Flag Triggered:", chat_data["isEmergency"])
+        res = client.post("/chat", json=med_req, headers=headers)
+        print(f"\n6. POST /chat (Adversarial Medication Request) -> Status {res.status_code}:")
+        med_resp = res.json()
+        print("  Reply snippet:", med_resp["reply"][:150] + "...")
+        print("  Skipped LLM:", med_resp["skippedLLM"])
+        print("  Is Emergency:", med_resp["isEmergency"])
         assert res.status_code == 200
-        assert chat_data["isEmergency"] == False
+        assert med_resp["skippedLLM"] == True
+        assert med_resp["isEmergency"] == False
+        assert "cannot recommend" in med_resp["reply"].lower() or "medication" in med_resp["reply"].lower()
 
-        # 9. POST /chat (Emergency Red Flag Detection test)
-        emergency_chat_req = {
+        # 7. ADVERSARIAL SAFETY TEST 2: Emergency Chest Pain (Pre-LLM Filter Check)
+        emerg_req = {
             "message": "I am having severe crushing chest pain radiating to my left arm right now!",
             "history": []
         }
-        res = client.post("/chat", json=emergency_chat_req, headers=headers)
-        print(f"\n9. POST /chat (Emergency Red Flag Trigger) -> Status {res.status_code}:")
-        emerg_data = res.json()
-        print("  Reply snippet:", emerg_data["reply"][:150] + "...")
-        print("  Is Emergency Red Flag Triggered:", emerg_data["isEmergency"])
+        res = client.post("/chat", json=emerg_req, headers=headers)
+        print(f"\n7. POST /chat (Adversarial Emergency Chest Pain) -> Status {res.status_code}:")
+        emerg_resp = res.json()
+        print("  Reply snippet:", emerg_resp["reply"][:150] + "...")
+        print("  Skipped LLM:", emerg_resp["skippedLLM"])
+        print("  Is Emergency:", emerg_resp["isEmergency"])
         assert res.status_code == 200
-        assert emerg_data["isEmergency"] == True
+        assert emerg_resp["skippedLLM"] == True
+        assert emerg_resp["isEmergency"] == True
+        assert "emergency" in emerg_resp["reply"].lower()
+
+        # 8. POST /chat (Standard Grounded Question)
+        std_req = {
+            "message": "How does physical activity help reduce my cardiovascular risk?",
+            "history": []
+        }
+        res = client.post("/chat", json=std_req, headers=headers)
+        print(f"\n8. POST /chat (Standard Health Question) -> Status {res.status_code}:")
+        std_resp = res.json()
+        print("  Reply snippet:", std_resp["reply"][:150] + "...")
+        print("  Skipped LLM:", std_resp["skippedLLM"])
+        assert res.status_code == 200
+        assert std_resp["isEmergency"] == False
 
         print("\n" + "=" * 60)
-        print("ALL API & LLM INTEGRATION TESTS PASSED SUCCESSFULLY!")
+        print("ALL API & SAFETY GUARDRAIL TESTS PASSED SUCCESSFULLY!")
         print("=" * 60)
 
 

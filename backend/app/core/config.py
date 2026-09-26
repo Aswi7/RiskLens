@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str = "risklens_db"
 
     # External LLM / Map API Keys
+    GEMINI_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     GOOGLE_PLACES_API_KEY: str = ""

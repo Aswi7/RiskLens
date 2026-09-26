@@ -3,10 +3,33 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity, Heart, Activity as PulseIcon, Sparkles,
   MapPin, MessageSquare, Send, RefreshCw,
-  FileText, User as UserIcon, Info
+  FileText, User as UserIcon, Info, AlertTriangle, CheckSquare, Square, Stethoscope
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
+
+interface RiskDriver {
+  feature: string;
+  impact: number;
+  description: string;
+}
+
+interface LifestyleItem {
+  category: string;
+  title: string;
+  action: string;
+  rationale: string;
+}
+
+interface StructuredRecommendations {
+  diet: string[];
+  exercise: string[];
+  sleep: string;
+  urgency: 'low' | 'moderate' | 'high';
+  sharedRiskFactors?: string[];
+  disclaimer: string;
+}
 
 export const DashboardPage: React.FC = () => {
   const { user, logout } = useAuth();
@@ -15,61 +38,95 @@ export const DashboardPage: React.FC = () => {
   const [predictionData, setPredictionData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'shap' | 'recommendations' | 'chat' | 'specialists'>('overview');
 
+  // Recommendations State
+  const [recommendations, setRecommendations] = useState<StructuredRecommendations | null>(null);
+  const [recLoading, setRecLoading] = useState<boolean>(false);
+  const [recError, setRecError] = useState<string | null>(null);
+  const [checkedItems, setCheckedItems] = useState<{ [key: string]: boolean }>({});
+
   // Chat State
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string; time: string }>>([
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string; time: string; isEmergency?: boolean; skippedLLM?: boolean }>>([
     {
       sender: 'ai',
-      text: `Hello ${user?.name || 'Alex'}! I'm riskLens AI. I've reviewed your latest screening report. How can I help you understand your factors today?`,
+      text: `Hello ${user?.name || 'there'}! I'm riskLens AI Health Assistant. I've reviewed your latest screening report. How can I assist you with your health indicators today?`,
       time: 'Just now'
     }
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
+  // Load prediction data & fetch recommendations
   useEffect(() => {
-    const saved = localStorage.getItem('risklens_latest_prediction');
-    if (saved) {
-      setPredictionData(JSON.parse(saved));
-    } else {
-      // Default mock fallback prediction
-      setPredictionData({
-        timestamp: new Date().toISOString(),
-        userProfile: { age: 48, bmi: '26.8', glucose: '128', bpSystolic: '134', bpDiastolic: '86' },
-        diabetes: {
-          riskPercentage: 62,
-          level: 'Moderate Risk',
-          shapFactors: [
-            { feature: 'Fasting Blood Glucose', value: '128 mg/dL', impact: '+24%', direction: 'up' },
-            { feature: 'Body Mass Index (BMI)', value: '26.8 kg/m²', impact: '+18%', direction: 'up' },
-            { feature: 'Age Factor', value: '48 years', impact: '+12%', direction: 'up' },
-            { feature: 'Diabetes Pedigree Proxy', value: 'Positive', impact: '+8%', direction: 'up' },
-            { feature: 'Systolic Blood Pressure', value: '134 mmHg', impact: '+2%', direction: 'neutral' },
-          ]
-        },
-        heartDisease: {
-          riskPercentage: 28,
-          level: 'Low Risk',
-          shapFactors: [
-            { feature: 'Systolic Blood Pressure', value: '134 mmHg', impact: '+14%', direction: 'up' },
-            { feature: 'Total Cholesterol', value: '215 mg/dL', impact: '+10%', direction: 'up' },
-            { feature: 'Exercise Angina', value: 'Negative', impact: '-4%', direction: 'down' },
-            { feature: 'Resting Heart Rate', value: '72 bpm', impact: '-2%', direction: 'down' },
-          ]
-        },
-        healthScore: 78
-      });
-    }
+    const fetchLatestData = async () => {
+      try {
+        const historyRes = await api.get('/history');
+        if (historyRes.data && historyRes.data.length > 0) {
+          const latest = historyRes.data[0];
+          setPredictionData({
+            id: latest.id,
+            timestamp: latest.timestamp,
+            results: latest.results,
+            input_payload: latest.input_payload,
+            diabetes: latest.results?.diabetes,
+            heartDisease: latest.results?.heartDisease
+          });
+          fetchRecommendations(latest.id);
+          return;
+        }
+      } catch (err) {
+        console.warn('Could not fetch prediction history from backend, checking local storage:', err);
+      }
+
+      // Check localStorage fallback
+      const saved = localStorage.getItem('risklens_latest_prediction');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setPredictionData(parsed);
+        fetchRecommendations();
+      } else {
+        // Default demo payload
+        const demo = {
+          timestamp: new Date().toISOString(),
+          diabetes: {
+            risk: { probability: 0.2008, isHighRisk: false, riskLevel: 'Low Risk', threshold: 0.4 },
+            status: 'success',
+            shapValues: { Sex: 0.0776, Age: -0.6116, BMI: -0.1039, HighBP: 0.25 }
+          },
+          heartDisease: {
+            risk: { probability: 0.8202, isHighRisk: true, riskLevel: 'High Risk', threshold: 0.5 },
+            status: 'success',
+            shapValues: { age: 0.3976, sex: -0.547, trestbps: 0.0178, chol: 0.18 }
+          }
+        };
+        setPredictionData(demo);
+        fetchRecommendations();
+      }
+    };
+
+    fetchLatestData();
   }, []);
 
-  const trendData = [
-    { month: 'Jan', diabetesRisk: 42, heartRisk: 22, healthScore: 82 },
-    { month: 'Feb', diabetesRisk: 48, heartRisk: 24, healthScore: 80 },
-    { month: 'Mar', diabetesRisk: 55, heartRisk: 26, healthScore: 77 },
-    { month: 'Apr', diabetesRisk: 58, heartRisk: 27, healthScore: 76 },
-    { month: 'May', diabetesRisk: predictionData?.diabetes?.riskPercentage || 62, heartRisk: predictionData?.heartDisease?.riskPercentage || 28, healthScore: predictionData?.healthScore || 78 },
-  ];
+  const fetchRecommendations = async (predictionId?: string) => {
+    setRecLoading(true);
+    setRecError(null);
+    try {
+      const res = await api.post('/recommendations', {
+        prediction_id: predictionId || predictionData?.id
+      });
+      setRecommendations(res.data);
+    } catch (err: any) {
+      console.error('Error fetching recommendations:', err);
+      setRecError('Failed to load personalized recommendations.');
+    } finally {
+      setRecLoading(false);
+    }
+  };
 
-  const handleSendMessage = (textToSend?: string) => {
+  const toggleCheck = (id: string) => {
+    setCheckedItems((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleSendMessage = async (textToSend?: string) => {
     const message = textToSend || chatInput;
     if (!message.trim()) return;
 
@@ -78,21 +135,57 @@ export const DashboardPage: React.FC = () => {
     if (!textToSend) setChatInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      let replyText = "Your diabetes risk of 62% is primarily influenced by your fasting glucose (128 mg/dL) and BMI (26.8 kg/m²). This is an early screening insight, not a diagnosis.";
-      if (message.toLowerCase().includes('heart') || message.toLowerCase().includes('bp')) {
-        replyText = "Your heart risk remains relatively low at 28%. Keeping your blood pressure below 120/80 mmHg and maintaining moderate aerobic activity will protect your cardiovascular baseline.";
-      } else if (message.toLowerCase().includes('diet') || message.toLowerCase().includes('eat')) {
-        replyText = "Prioritizing complex carbohydrates, soluble fiber (oats, legumes), and reducing refined sugars will directly help stabilize fasting glucose levels.";
-      }
+    try {
+      const historyPayload = chatMessages
+        .filter((m) => m.text)
+        .map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text
+        }));
 
+      const res = await api.post('/chat', {
+        message,
+        history: historyPayload,
+        context: predictionData?.results || predictionData
+      });
+
+      const replyData = res.data;
       setChatMessages((prev) => [
         ...prev,
-        { sender: 'ai', text: replyText, time: 'Just now' }
+        {
+          sender: 'ai',
+          text: replyData.reply,
+          time: 'Just now',
+          isEmergency: replyData.isEmergency,
+          skippedLLM: replyData.skippedLLM
+        }
       ]);
+    } catch (err) {
+      console.error('Error in chat API:', err);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: 'ai',
+          text: 'I encountered an issue connecting to the assistant. Please try asking your question again.',
+          time: 'Just now'
+        }
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 1000);
+    }
   };
+
+  const trendData = [
+    { month: 'Jan', diabetesRisk: 15, heartRisk: 75 },
+    { month: 'Feb', diabetesRisk: 18, heartRisk: 78 },
+    { month: 'Mar', diabetesRisk: 19, heartRisk: 80 },
+    { month: 'Apr', diabetesRisk: 20, heartRisk: 81 },
+    {
+      month: 'Current',
+      diabetesRisk: Math.round((predictionData?.diabetes?.risk?.probability || 0.2) * 100),
+      heartRisk: Math.round((predictionData?.heartDisease?.risk?.probability || 0.82) * 100)
+    }
+  ];
 
   const specialists = [
     {
@@ -126,6 +219,9 @@ export const DashboardPage: React.FC = () => {
 
   if (!predictionData) return null;
 
+  const diabetesRiskPct = Math.round((predictionData.diabetes?.risk?.probability || 0) * 100);
+  const heartRiskPct = Math.round((predictionData.heartDisease?.risk?.probability || 0) * 100);
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       {/* Top Header Navbar */}
@@ -151,9 +247,9 @@ export const DashboardPage: React.FC = () => {
 
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
               <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
-                {user?.name?.charAt(0) || 'A'}
+                {user?.name?.charAt(0) || 'U'}
               </div>
-              <span className="hidden sm:inline text-xs font-bold text-slate-800">{user?.name || 'Alex Morgan'}</span>
+              <span className="hidden sm:inline text-xs font-bold text-slate-800">{user?.name || 'User'}</span>
               <button
                 onClick={logout}
                 className="text-xs text-slate-400 hover:text-slate-600 font-semibold cursor-pointer"
@@ -173,20 +269,24 @@ export const DashboardPage: React.FC = () => {
           <div className="relative z-10">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-teal-500/20 text-teal-300 border border-teal-500/30 rounded-full text-xs font-semibold mb-2">
               <Sparkles className="w-3.5 h-3.5" />
-              ML Screening Pipeline Executed
+              Multi-Model AI Screening Pipeline
             </div>
             <h1 className="font-heading text-2xl sm:text-3xl font-extrabold">
-              Health Screening Report for {user?.name || 'Alex Morgan'}
+              Health Screening Report for {user?.name || 'User'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1">
-              Evaluated: Type 2 Diabetes (Pima Model) & Heart Disease (UCI Cleveland Model)
+              Evaluated: Type 2 Diabetes (XGBoost) & Heart Disease (Logistic Regression with StandardScaler)
             </p>
           </div>
 
           <div className="flex items-center gap-4 relative z-10">
             <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 text-center">
-              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-300">Overall Health Score</div>
-              <div className="text-3xl font-extrabold text-white mt-0.5">{predictionData.healthScore}<span className="text-xs text-teal-400">/100</span></div>
+              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-300">Diabetes Risk</div>
+              <div className="text-2xl font-extrabold text-amber-400 mt-0.5">{diabetesRiskPct}%</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 text-center">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-300">Heart Risk</div>
+              <div className="text-2xl font-extrabold text-red-400 mt-0.5">{heartRiskPct}%</div>
             </div>
           </div>
         </div>
@@ -196,7 +296,7 @@ export const DashboardPage: React.FC = () => {
           {[
             { id: 'overview', label: 'Risk Overview', icon: Activity },
             { id: 'shap', label: 'SHAP Explainability', icon: Sparkles },
-            { id: 'recommendations', label: 'Personalized Plan', icon: FileText },
+            { id: 'recommendations', label: 'Personalized Checklist', icon: FileText },
             { id: 'chat', label: 'AI Health Chatbot', icon: MessageSquare },
             { id: 'specialists', label: 'Nearby Specialists', icon: MapPin },
           ].map((tab) => {
@@ -222,10 +322,9 @@ export const DashboardPage: React.FC = () => {
         {/* TAB 1: OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="space-y-8">
-            {/* Risk Gauges Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Type 2 Diabetes Card */}
-              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center font-bold">
@@ -236,88 +335,78 @@ export const DashboardPage: React.FC = () => {
                       <span className="text-xs font-semibold text-slate-400">XGBoost ML Estimator</span>
                     </div>
                   </div>
-                  <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">
-                    {predictionData.diabetes.level}
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${predictionData.diabetes?.risk?.isHighRisk ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                    {predictionData.diabetes?.risk?.riskLevel || 'Evaluated'}
                   </span>
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-4xl font-extrabold text-slate-900">{predictionData.diabetes.riskPercentage}%</span>
-                  <span className="text-xs font-semibold text-slate-500">Estimated 5-Year Risk Probability</span>
+                  <span className="text-4xl font-extrabold text-slate-900">{diabetesRiskPct}%</span>
+                  <span className="text-xs font-semibold text-slate-500">Decision Cutoff Threshold: 40.0%</span>
                 </div>
 
-                {/* Progress bar */}
                 <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden mb-6">
                   <div
                     className="bg-amber-500 h-full rounded-full transition-all duration-700"
-                    style={{ width: `${predictionData.diabetes.riskPercentage}%` }}
+                    style={{ width: `${Math.min(diabetesRiskPct, 100)}%` }}
                   ></div>
                 </div>
 
                 <div className="space-y-2 border-t border-slate-100 pt-4">
-                  <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">Key Factor Pushes (SHAP)</div>
-                  {predictionData.diabetes.shapFactors.slice(0, 3).map((f: any) => (
-                    <div key={f.feature} className="flex items-center justify-between text-xs py-1">
-                      <span className="text-slate-600 font-medium">{f.feature} ({f.value})</span>
-                      <span className="font-extrabold text-amber-600">{f.impact}</span>
-                    </div>
-                  ))}
+                  <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">Top Positive SHAP Drivers</div>
+                  {predictionData.diabetes?.shapValues &&
+                    Object.entries(predictionData.diabetes.shapValues)
+                      .slice(0, 3)
+                      .map(([feat, val]: [string, any]) => (
+                        <div key={feat} className="flex items-center justify-between text-xs py-1">
+                          <span className="text-slate-600 font-medium">{feat}</span>
+                          <span className="font-extrabold text-amber-600">+{Number(val).toFixed(4)}</span>
+                        </div>
+                      ))}
                 </div>
               </div>
 
               {/* Heart Disease Card */}
-              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-center font-bold">
                       <Heart className="w-5 h-5" />
                     </div>
                     <div>
                       <h3 className="font-heading font-extrabold text-lg text-slate-900">Heart Disease Risk</h3>
-                      <span className="text-xs font-semibold text-slate-400">UCI Cleveland ML Estimator</span>
+                      <span className="text-xs font-semibold text-slate-400">Logistic Regression (Scaled)</span>
                     </div>
                   </div>
-                  <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold">
-                    {predictionData.heartDisease.level}
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${predictionData.heartDisease?.risk?.isHighRisk ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                    {predictionData.heartDisease?.risk?.riskLevel || 'Evaluated'}
                   </span>
                 </div>
 
                 <div className="flex items-baseline gap-2 mb-4">
-                  <span className="text-4xl font-extrabold text-slate-900">{predictionData.heartDisease.riskPercentage}%</span>
-                  <span className="text-xs font-semibold text-slate-500">Estimated 5-Year Risk Probability</span>
+                  <span className="text-4xl font-extrabold text-slate-900">{heartRiskPct}%</span>
+                  <span className="text-xs font-semibold text-slate-500">Decision Cutoff Threshold: 50.0%</span>
                 </div>
 
                 <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden mb-6">
                   <div
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-700"
-                    style={{ width: `${predictionData.heartDisease.riskPercentage}%` }}
+                    className="bg-red-500 h-full rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min(heartRiskPct, 100)}%` }}
                   ></div>
                 </div>
 
                 <div className="space-y-2 border-t border-slate-100 pt-4">
-                  <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">Key Factor Pushes (SHAP)</div>
-                  {predictionData.heartDisease.shapFactors.slice(0, 3).map((f: any) => (
-                    <div key={f.feature} className="flex items-center justify-between text-xs py-1">
-                      <span className="text-slate-600 font-medium">{f.feature} ({f.value})</span>
-                      <span className={`font-extrabold ${f.direction === 'down' ? 'text-emerald-600' : 'text-slate-700'}`}>{f.impact}</span>
-                    </div>
-                  ))}
+                  <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">Top Positive SHAP Drivers</div>
+                  {predictionData.heartDisease?.shapValues &&
+                    Object.entries(predictionData.heartDisease.shapValues)
+                      .slice(0, 3)
+                      .map(([feat, val]: [string, any]) => (
+                        <div key={feat} className="flex items-center justify-between text-xs py-1">
+                          <span className="text-slate-600 font-medium">{feat}</span>
+                          <span className="font-extrabold text-red-600">+{Number(val).toFixed(4)}</span>
+                        </div>
+                      ))}
                 </div>
-              </div>
-            </div>
-
-            {/* Shared Risk Factor Banner */}
-            <div className="bg-gradient-to-r from-teal-500/10 via-blue-500/10 to-indigo-500/10 border border-teal-200 p-6 rounded-3xl flex items-start gap-4">
-              <div className="w-10 h-10 rounded-2xl bg-teal-600 text-white flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-heading font-extrabold text-base text-slate-900">
-                  Shared Risk Factor Insight
-                </h4>
-                <p className="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
-                  Your screening reveals that factors such as <strong>BMI ({predictionData.userProfile.bmi})</strong> and <strong>Systolic Blood Pressure ({predictionData.userProfile.bpSystolic} mmHg)</strong> simultaneously contribute to both your Type 2 Diabetes and Heart Disease estimations. Targeting weight management and sodium intake will improve both risk profiles together.
-                </p>
               </div>
             </div>
 
@@ -326,14 +415,14 @@ export const DashboardPage: React.FC = () => {
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-6">
                 <div>
                   <h3 className="font-heading font-extrabold text-lg text-slate-900">Risk Trajectory Over Time</h3>
-                  <p className="text-xs text-slate-500">Historical prediction tracking (5 Months)</p>
+                  <p className="text-xs text-slate-500">Historical prediction tracking</p>
                 </div>
                 <div className="flex items-center gap-4 text-xs font-bold">
                   <span className="flex items-center gap-1.5 text-amber-600">
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Diabetes Risk
                   </span>
-                  <span className="flex items-center gap-1.5 text-emerald-600">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Heart Risk
+                  <span className="flex items-center gap-1.5 text-red-600">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> Heart Risk
                   </span>
                 </div>
               </div>
@@ -346,7 +435,7 @@ export const DashboardPage: React.FC = () => {
                     <YAxis stroke="#94A3B8" fontSize={12} domain={[0, 100]} />
                     <Tooltip contentStyle={{ backgroundColor: '#0F172A', color: '#fff', borderRadius: '12px' }} />
                     <Line type="monotone" dataKey="diabetesRisk" stroke="#F59E0B" strokeWidth={3} dot={{ r: 5 }} />
-                    <Line type="monotone" dataKey="heartRisk" stroke="#10B981" strokeWidth={3} dot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="heartRisk" stroke="#EF4444" strokeWidth={3} dot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -359,109 +448,201 @@ export const DashboardPage: React.FC = () => {
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
             <div>
               <span className="px-3 py-1 bg-teal-100 text-teal-800 rounded-full text-xs font-extrabold">
-                SHAP Explainable AI
+                SHAP Explainable AI Breakdown
               </span>
               <h2 className="font-heading text-2xl font-bold text-slate-900 mt-2">
-                Why was your Diabetes risk calculated at {predictionData.diabetes.riskPercentage}%?
+                What factors drive your statistical risk scores?
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                SHAP (Shapley Additive exPlanations) breaks down exact feature weights so you know precisely what drives your result.
+                SHAP (Shapley Additive exPlanations) calculates feature weight contributions for each model independently.
               </p>
             </div>
 
-            <div className="space-y-4 pt-4 border-t border-slate-100">
-              {predictionData.diabetes.shapFactors.map((f: any) => (
-                <div key={f.feature} className="p-4 bg-slate-50 rounded-2xl border border-slate-200/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Clinical Parameter</span>
-                    <span className="font-bold text-slate-900 text-base">{f.feature}</span>
-                    <span className="text-xs text-slate-500 block font-semibold">User Data: {f.value}</span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <span className="text-xs text-slate-400 font-bold block">Risk Impact</span>
-                      <span className="text-lg font-extrabold text-amber-600">{f.impact}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+              {/* Diabetes SHAP */}
+              <div className="space-y-3">
+                <h3 className="font-heading font-bold text-base text-slate-900 border-b pb-2">
+                  Diabetes (TreeExplainer)
+                </h3>
+                {predictionData.diabetes?.shapValues ? (
+                  Object.entries(predictionData.diabetes.shapValues).map(([feat, val]: [string, any]) => (
+                    <div key={feat} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-800">{feat}</span>
+                      <span className={`font-extrabold ${Number(val) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        {Number(val) > 0 ? `+${Number(val).toFixed(4)}` : Number(val).toFixed(4)}
+                      </span>
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-                      ↑
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400">No SHAP output available</p>
+                )}
+              </div>
 
-            <div className="p-4 bg-slate-900 text-white rounded-2xl text-xs space-y-1">
-              <span className="font-bold text-teal-400 block">Explainability Guarantee</span>
-              <p className="text-slate-300">
-                Unlike opaque black-box neural networks, riskLens uses tree-based SHAP values to guarantee transparency for every patient assessment.
-              </p>
+              {/* Heart Disease SHAP */}
+              <div className="space-y-3">
+                <h3 className="font-heading font-bold text-base text-slate-900 border-b pb-2">
+                  Heart Disease (LinearExplainer)
+                </h3>
+                {predictionData.heartDisease?.shapValues ? (
+                  Object.entries(predictionData.heartDisease.shapValues).map(([feat, val]: [string, any]) => (
+                    <div key={feat} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-800">{feat}</span>
+                      <span className={`font-extrabold ${Number(val) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {Number(val) > 0 ? `+${Number(val).toFixed(4)}` : Number(val).toFixed(4)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400">No SHAP output available</p>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* TAB 3: PERSONALIZED PLAN */}
+        {/* TAB 3: PERSONALIZED CHECKLIST RECOMMENDATIONS */}
         {activeTab === 'recommendations' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Personalized Prevention Plan</h2>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  AI-generated guidelines grounded in your clinical SHAP indicators.
+                  Actionable lifestyle guidance grounded in your SHAP feature drivers.
                 </p>
               </div>
-              <span className="hidden sm:inline-flex px-3 py-1 bg-teal-50 border border-teal-200 text-teal-700 rounded-full text-xs font-extrabold">
-                ✨ AI-Generated • Personalized
-              </span>
+
+              {recommendations && (
+                <span className={`px-4 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
+                  recommendations.urgency === 'high'
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : recommendations.urgency === 'moderate'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}>
+                  Urgency Level: {recommendations.urgency}
+                </span>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                  🥗
-                </div>
-                <h3 className="font-heading font-bold text-lg text-slate-900">Nutrition Protocol</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Focus on high-fiber foods to buffer glucose absorption (target 30g/day). Swap refined carbohydrates for whole grains and legumes to reduce postprandial glucose spikes.
-                </p>
+            {recLoading ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 animate-pulse">
+                <Sparkles className="w-8 h-8 text-teal-600 mx-auto mb-2 animate-spin" />
+                <p className="text-xs font-bold text-slate-600">Generating personalized structured recommendations...</p>
               </div>
+            ) : recError ? (
+              <div className="p-6 bg-red-50 border border-red-200 text-red-700 rounded-3xl text-xs flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <span>{recError}</span>
+              </div>
+            ) : recommendations ? (
+              <div className="space-y-6">
+                {/* Shared Risk Factors Callout */}
+                {recommendations.sharedRiskFactors && recommendations.sharedRiskFactors.length > 0 && (
+                  <div className="bg-gradient-to-r from-teal-500/10 via-blue-500/10 to-indigo-500/10 border border-teal-200 p-6 rounded-3xl space-y-2">
+                    <div className="flex items-center gap-2 text-teal-800 font-extrabold text-sm">
+                      <Sparkles className="w-4 h-4 text-teal-600" />
+                      <span>Shared Cardiometabolic Risk Factors</span>
+                    </div>
+                    <ul className="space-y-1 text-xs text-slate-700 pl-6 list-disc">
+                      {recommendations.sharedRiskFactors.map((factor, idx) => (
+                        <li key={idx}>{factor}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                  🏃
-                </div>
-                <h3 className="font-heading font-bold text-lg text-slate-900">Movement Guidelines</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Engage in 150 minutes of moderate aerobic exercise per week (e.g. brisk walking 30 min/day). Physical activity increases insulin sensitivity independent of weight loss.
-                </p>
-              </div>
+                {/* Diet Checklist */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
+                      🥗
+                    </div>
+                    <h3 className="font-heading font-bold text-base text-slate-900">Dietary Action Checklist</h3>
+                  </div>
 
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
-                  😴
+                  <div className="space-y-3">
+                    {recommendations.diet.map((item, idx) => {
+                      const id = `diet_${idx}`;
+                      const isDone = !!checkedItems[id];
+                      return (
+                        <div
+                          key={id}
+                          onClick={() => toggleCheck(id)}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                            isDone ? 'bg-emerald-50/60 border-emerald-200 text-slate-500 line-through' : 'bg-slate-50 border-slate-200 text-slate-800 hover:border-slate-300'
+                          }`}
+                        >
+                          {isDone ? (
+                            <CheckSquare className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                          ) : (
+                            <Square className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
+                          )}
+                          <span className="text-xs leading-relaxed font-medium">{item}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <h3 className="font-heading font-bold text-lg text-slate-900">Sleep & Stress Management</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Target 7-8 hours of uninterrupted sleep. Elevated stress hormones (cortisol) mobilize glucose reserves and increase blood pressure.
-                </p>
-              </div>
 
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-                  ⚡
+                {/* Exercise Checklist */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
+                      🏃
+                    </div>
+                    <h3 className="font-heading font-bold text-base text-slate-900">Physical Activity Checklist</h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    {recommendations.exercise.map((item, idx) => {
+                      const id = `exercise_${idx}`;
+                      const isDone = !!checkedItems[id];
+                      return (
+                        <div
+                          key={id}
+                          onClick={() => toggleCheck(id)}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                            isDone ? 'bg-blue-50/60 border-blue-200 text-slate-500 line-through' : 'bg-slate-50 border-slate-200 text-slate-800 hover:border-slate-300'
+                          }`}
+                        >
+                          {isDone ? (
+                            <CheckSquare className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                          ) : (
+                            <Square className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
+                          )}
+                          <span className="text-xs leading-relaxed font-medium">{item}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <h3 className="font-heading font-bold text-lg text-slate-900">Priority Next Step</h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Schedule a routine Fasting Plasma Glucose test with a primary care physician to verify your baseline within 60 days.
-                </p>
+
+                {/* Sleep & Lifestyle */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                  <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                    <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">
+                      😴
+                    </div>
+                    <h3 className="font-heading font-bold text-base text-slate-900">Sleep & Recovery Guidance</h3>
+                  </div>
+                  <p className="text-xs text-slate-700 leading-relaxed p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                    {recommendations.sleep}
+                  </p>
+                </div>
+
+                {/* Medical Safety Disclaimer */}
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs flex items-start gap-3">
+                  <Stethoscope className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed font-medium">{recommendations.disclaimer}</p>
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         )}
 
         {/* TAB 4: CHATBOT */}
         {activeTab === 'chat' && (
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[550px]">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-teal-500 text-slate-900 flex items-center justify-center font-bold">
@@ -469,30 +650,40 @@ export const DashboardPage: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-heading font-bold text-sm">riskLens AI Health Assistant</h3>
-                  <p className="text-[10px] text-teal-300">Grounded in your latest assessment parameters</p>
+                  <p className="text-[10px] text-teal-300">Grounded in your latest assessment + SHAP drivers</p>
                 </div>
               </div>
               <span className="text-[10px] bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">
-                Screening Support Only
+                Educational Support Only
               </span>
             </div>
 
             {/* Chat History */}
             <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50">
               {chatMessages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
-                      msg.sender === 'user'
-                        ? 'bg-teal-600 text-white rounded-br-none shadow-xs'
-                        : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-xs'
-                    }`}
-                  >
-                    <p>{msg.text}</p>
-                    <span className="text-[9px] opacity-60 mt-1 block text-right">{msg.time}</span>
+                <div key={i} className="space-y-2">
+                  <div className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
+                        msg.sender === 'user'
+                          ? 'bg-teal-600 text-white rounded-br-none shadow-xs'
+                          : msg.isEmergency
+                          ? 'bg-red-600 text-white font-bold rounded-bl-none shadow-md border border-red-700'
+                          : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-xs'
+                      }`}
+                    >
+                      {msg.isEmergency && (
+                        <div className="flex items-center gap-1.5 text-yellow-300 font-extrabold mb-1">
+                          <AlertTriangle className="w-4 h-4" />
+                          <span>ACUTE MEDICAL EMERGENCY WARNING</span>
+                        </div>
+                      )}
+                      <p className="whitespace-pre-line">{msg.text}</p>
+                      <div className="flex items-center justify-between text-[9px] opacity-60 mt-1">
+                        {msg.skippedLLM && <span>Pre-Safety Guardrail Triggered</span>}
+                        <span className="ml-auto">{msg.time}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -500,18 +691,19 @@ export const DashboardPage: React.FC = () => {
               {isTyping && (
                 <div className="flex justify-start">
                   <div className="bg-white border border-slate-200 text-slate-500 rounded-2xl px-4 py-3 text-xs animate-pulse">
-                    riskLens AI is analyzing your query...
+                    riskLens AI is evaluating your query against safety guardrails...
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Quick Sample Prompts */}
+            {/* Sample Prompts */}
             <div className="p-2.5 bg-white border-t border-slate-100 flex gap-2 overflow-x-auto">
               {[
-                "Why is my diabetes risk higher?",
-                "How does BMI affect heart health?",
-                "What foods should I avoid?"
+                "Why is my heart disease risk score higher?",
+                "What dietary changes help reduce cholesterol?",
+                "What dose of metformin should I take?",
+                "I have severe chest pain right now"
               ].map((p) => (
                 <button
                   key={p}

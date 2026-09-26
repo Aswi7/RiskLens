@@ -107,8 +107,46 @@ def run_tests():
         assert res.status_code == 200
         assert len(history_records) >= 2
 
+        # 7. POST /recommendations (Grounded in latest prediction & SHAP drivers)
+        res = client.post("/recommendations", json={}, headers=headers)
+        print(f"\n7. POST /recommendations -> Status {res.status_code}:")
+        rec_data = res.json()
+        print("  Executive Summary:", rec_data["executiveSummary"][:100] + "...")
+        print("  Risk Drivers Breakdown Count:", len(rec_data["riskDriversBreakdown"]))
+        print("  Lifestyle Recommendations Count:", len(rec_data["lifestyleRecommendations"]))
+        print("  Doctor Discussion Questions Count:", len(rec_data["doctorQuestions"]))
+        assert res.status_code == 200
+        assert len(rec_data["lifestyleRecommendations"]) > 0
+        assert len(rec_data["doctorQuestions"]) > 0
+
+        # 8. POST /chat (Standard follow-up health question)
+        chat_req = {
+            "message": "What exercise changes should I make to reduce my blood pressure and risk?",
+            "history": []
+        }
+        res = client.post("/chat", json=chat_req, headers=headers)
+        print(f"\n8. POST /chat (Standard Q&A) -> Status {res.status_code}:")
+        chat_data = res.json()
+        print("  Reply snippet:", chat_data["reply"][:150] + "...")
+        print("  Is Emergency Red Flag Triggered:", chat_data["isEmergency"])
+        assert res.status_code == 200
+        assert chat_data["isEmergency"] == False
+
+        # 9. POST /chat (Emergency Red Flag Detection test)
+        emergency_chat_req = {
+            "message": "I am having severe crushing chest pain radiating to my left arm right now!",
+            "history": []
+        }
+        res = client.post("/chat", json=emergency_chat_req, headers=headers)
+        print(f"\n9. POST /chat (Emergency Red Flag Trigger) -> Status {res.status_code}:")
+        emerg_data = res.json()
+        print("  Reply snippet:", emerg_data["reply"][:150] + "...")
+        print("  Is Emergency Red Flag Triggered:", emerg_data["isEmergency"])
+        assert res.status_code == 200
+        assert emerg_data["isEmergency"] == True
+
         print("\n" + "=" * 60)
-        print("ALL API INTEGRATION TESTS PASSED SUCCESSFULLY!")
+        print("ALL API & LLM INTEGRATION TESTS PASSED SUCCESSFULLY!")
         print("=" * 60)
 
 

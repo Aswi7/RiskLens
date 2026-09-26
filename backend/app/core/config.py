@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGO_DB_NAME: str = "risklens_db"
 
+    # External LLM / Map API Keys
+    OPENAI_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
+    GOOGLE_PLACES_API_KEY: str = ""
+
     # ML Models Directory
     MODEL_DIR: str = ""
 

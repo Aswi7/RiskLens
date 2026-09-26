@@ -9,6 +9,7 @@ from app.ml.loader import ml_loader
 from app.features.health.routers import router as health_router
 from app.features.auth.routers import router as auth_router
 from app.features.predictions.routers import router as predictions_router
+from app.features.llm.routers import router as llm_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +32,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="RiskLens Multi-Disease Early Prediction & SHAP Explainability API",
+    description="RiskLens Multi-Disease Early Prediction, SHAP Explainability & Personalized AI Advice API",
     version="1.0.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
@@ -50,6 +51,7 @@ app.add_middleware(
 # Include Routers
 app.include_router(auth_router)
 app.include_router(predictions_router)
+app.include_router(llm_router)
 app.include_router(health_router)
 
 

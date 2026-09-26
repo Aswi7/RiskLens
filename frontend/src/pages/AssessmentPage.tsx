@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, ArrowRight, ArrowLeft, Check, Sparkles, Upload, Watch, Lock } from 'lucide-react';
+import { Activity, ArrowRight, ArrowLeft, Check, Sparkles, Upload, Watch, Lock, AlertCircle } from 'lucide-react';
+import api from '../services/api';
 
 export const AssessmentPage: React.FC = () => {
   const navigate = useNavigate();
@@ -8,159 +9,75 @@ export const AssessmentPage: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingStage, setLoadingStage] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Assessment Data State
+  // Clean real user input form data
   const [formData, setFormData] = useState({
     // Step 1: Basic Profile
-    age: '45',
+    age: '',
     gender: 'female',
-    height: '165',
-    weight: '72',
+    height: '',
+    weight: '',
     // Step 2: Lifestyle
-    exercise: 'moderate', // low, moderate, high
-    diet: 'average', // poor, average, healthy
-    sleepHours: '6.5',
-    smoking: 'former', // never, former, current
-    alcohol: 'occasional', // none, occasional, regular
-    stressLevel: '6', // 1-10
+    exercise: 'moderate',
+    diet: 'average',
+    sleepHours: '7.0',
+    smoking: 'never',
+    alcohol: 'none',
+    stressLevel: '5',
     // Step 3: Medical History
-    hypertension: true,
-    highCholesterol: true,
+    hypertension: false,
+    highCholesterol: false,
     previousHeartCondition: false,
     gestationalDiabetes: false,
-    preDiabetes: true,
+    preDiabetes: false,
     // Step 4: Family History
-    fatherDiabetes: true,
+    fatherDiabetes: false,
     fatherHeartDisease: false,
     motherDiabetes: false,
-    motherHeartDisease: true,
+    motherHeartDisease: false,
     siblingDiabetes: false,
     // Step 5: Symptoms
-    chestPainType: 'atypical', // none, atypical, typical, non-anginal
+    chestPainType: 'none',
     exerciseAngina: false,
-    shortnessOfBreath: true,
-    frequentUrination: true,
-    unexplainedFatigue: true,
+    shortnessOfBreath: false,
+    frequentUrination: false,
+    unexplainedFatigue: false,
     increasedThirst: false,
     // Step 6: Vitals
-    glucose: '128',
-    bpSystolic: '134',
-    bpDiastolic: '86',
-    heartRate: '76',
-    fastingGlucose: '115',
-    totalCholesterol: '215',
+    glucose: '',
+    bpSystolic: '',
+    bpDiastolic: '',
+    heartRate: '',
+    fastingGlucose: '',
+    totalCholesterol: '',
     // Step 7: Lab OCR
     labReportUploaded: false,
     // Step 8: Mental Wellness
-    mentalStress: '6',
+    mentalStress: '5',
     sleepQuality: 'fair',
     // Step 9: Wearable Data
-    wearableSynced: true,
-    dailySteps: '6420',
+    wearableSynced: false,
+    dailySteps: '6000',
     restingHeartRate: '72',
-    // Step 10: Summary
   });
 
-  // Calculate BMI dynamically
-  const heightM = parseFloat(formData.height) / 100 || 1.7;
-  const weightKg = parseFloat(formData.weight) || 70;
-  const bmi = (weightKg / (heightM * heightM)).toFixed(1);
+  // Dynamic BMI Calculation
+  const heightM = parseFloat(formData.height) / 100 || 0;
+  const weightKg = parseFloat(formData.weight) || 0;
+  const bmi = heightM > 0 && weightKg > 0 ? (weightKg / (heightM * heightM)).toFixed(1) : '—';
 
-  const getBmiCategory = (val: number) => {
-    if (val < 18.5) return { label: 'Underweight', color: 'text-amber-600 bg-amber-50' };
-    if (val < 25) return { label: 'Healthy Weight', color: 'text-emerald-600 bg-emerald-50' };
-    if (val < 30) return { label: 'Overweight', color: 'text-amber-600 bg-amber-50' };
+  const getBmiCategory = (valStr: string) => {
+    const val = parseFloat(valStr);
+    if (!val || isNaN(val)) return { label: 'Enter Height & Weight', color: 'text-slate-500 bg-slate-100' };
+    if (val < 18.5) return { label: 'Underweight Zone', color: 'text-amber-600 bg-amber-50' };
+    if (val < 25) return { label: 'Healthy Weight Zone', color: 'text-emerald-600 bg-emerald-50' };
+    if (val < 30) return { label: 'Overweight Zone', color: 'text-amber-600 bg-amber-50' };
     return { label: 'Obese Zone', color: 'text-rose-600 bg-rose-50' };
   };
 
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const loadPreset = (type: 'moderate' | 'healthy') => {
-    if (type === 'moderate') {
-      setFormData({
-        age: '48',
-        gender: 'female',
-        height: '162',
-        weight: '78',
-        exercise: 'low',
-        diet: 'average',
-        sleepHours: '6.0',
-        smoking: 'former',
-        alcohol: 'occasional',
-        stressLevel: '7',
-        hypertension: true,
-        highCholesterol: true,
-        previousHeartCondition: false,
-        gestationalDiabetes: true,
-        preDiabetes: true,
-        fatherDiabetes: true,
-        fatherHeartDisease: true,
-        motherDiabetes: false,
-        motherHeartDisease: false,
-        siblingDiabetes: true,
-        chestPainType: 'atypical',
-        exerciseAngina: true,
-        shortnessOfBreath: true,
-        frequentUrination: true,
-        unexplainedFatigue: true,
-        increasedThirst: true,
-        glucose: '142',
-        bpSystolic: '138',
-        bpDiastolic: '88',
-        heartRate: '78',
-        fastingGlucose: '126',
-        totalCholesterol: '235',
-        labReportUploaded: true,
-        mentalStress: '7',
-        sleepQuality: 'poor',
-        wearableSynced: true,
-        dailySteps: '4200',
-        restingHeartRate: '78',
-      });
-    } else {
-      setFormData({
-        age: '32',
-        gender: 'male',
-        height: '178',
-        weight: '72',
-        exercise: 'high',
-        diet: 'healthy',
-        sleepHours: '7.5',
-        smoking: 'never',
-        alcohol: 'none',
-        stressLevel: '3',
-        hypertension: false,
-        highCholesterol: false,
-        previousHeartCondition: false,
-        gestationalDiabetes: false,
-        preDiabetes: false,
-        fatherDiabetes: false,
-        fatherHeartDisease: false,
-        motherDiabetes: false,
-        motherHeartDisease: false,
-        siblingDiabetes: false,
-        chestPainType: 'none',
-        exerciseAngina: false,
-        shortnessOfBreath: false,
-        frequentUrination: false,
-        unexplainedFatigue: false,
-        increasedThirst: false,
-        glucose: '92',
-        bpSystolic: '118',
-        bpDiastolic: '76',
-        heartRate: '64',
-        fastingGlucose: '88',
-        totalCholesterol: '175',
-        labReportUploaded: false,
-        mentalStress: '3',
-        sleepQuality: 'good',
-        wearableSynced: true,
-        dailySteps: '10500',
-        restingHeartRate: '62',
-      });
-    }
   };
 
   const handleNext = () => {
@@ -181,54 +98,71 @@ export const AssessmentPage: React.FC = () => {
 
   const handleSubmitAssessment = async () => {
     setIsSubmitting(true);
-    setLoadingStage('Initializing XGBoost Multi-Disease Pipeline...');
+    setErrorMsg(null);
+    setLoadingStage('Connecting to RiskLens Backend API...');
 
-    await new Promise((r) => setTimeout(r, 700));
-    setLoadingStage('Evaluating Type 2 Diabetes ML Model (Pima Dataset)...');
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      setLoadingStage('Evaluating Diabetes XGBoost Model & Heart Disease Logistic Model...');
 
-    await new Promise((r) => setTimeout(r, 800));
-    setLoadingStage('Evaluating Heart Disease ML Model (UCI Cleveland Dataset)...');
+      const cpMap: { [key: string]: number } = {
+        none: 0,
+        atypical: 1,
+        typical: 2,
+        'non-anginal': 3
+      };
 
-    await new Promise((r) => setTimeout(r, 800));
-    setLoadingStage('Computing Per-Feature SHAP Contribution Vectors...');
+      const payload = {
+        // Shared parameters
+        Sex: formData.gender === 'male' ? 1 : 0,
+        sex: formData.gender === 'male' ? 1 : 0,
+        Age: parseFloat(formData.age) || 45,
+        age: parseFloat(formData.age) || 45,
+        BMI: bmi !== '—' ? parseFloat(bmi) : 25,
 
-    await new Promise((r) => setTimeout(r, 900));
-    setLoadingStage('Synthesizing Personalized LLM Recommendation Matrix...');
+        // Diabetes parameters (16 features)
+        HighBP: formData.hypertension || (parseFloat(formData.bpSystolic) >= 130) ? 1 : 0,
+        HighChol: formData.highCholesterol || (parseFloat(formData.totalCholesterol) >= 200) ? 1 : 0,
+        Smoker: formData.smoking !== 'never' ? 1 : 0,
+        PhysActivity: formData.exercise !== 'low' ? 1 : 0,
+        Fruits: formData.diet === 'healthy' || formData.diet === 'average' ? 1 : 0,
+        Veggies: formData.diet === 'healthy' || formData.diet === 'average' ? 1 : 0,
+        HvyAlcoholConsump: formData.alcohol === 'regular' ? 1 : 0,
+        Stroke: formData.previousHeartCondition ? 1 : 0,
+        HeartDiseaseorAttack: formData.previousHeartCondition || formData.fatherHeartDisease || formData.motherHeartDisease ? 1 : 0,
+        DiffWalk: formData.exercise === 'low' || formData.shortnessOfBreath ? 1 : 0,
+        GenHlth: formData.diet === 'healthy' ? 2 : formData.diet === 'average' ? 3 : 4,
+        MentHlth: parseFloat(formData.mentalStress) || 5,
+        PhysHlth: formData.exercise === 'high' ? 0 : 2,
 
-    await new Promise((r) => setTimeout(r, 600));
-    // Save generated prediction to localStorage for dashboard view
-    const calculatedDiabetesRisk = parseFloat(formData.glucose) > 130 || parseFloat(bmi) > 27 ? 64 : 18;
-    const calculatedHeartRisk = parseFloat(formData.bpSystolic) > 130 || formData.chestPainType !== 'none' ? 42 : 14;
+        // Heart Disease parameters (7 raw fields)
+        trestbps: parseFloat(formData.bpSystolic) || 120,
+        chol: parseFloat(formData.totalCholesterol) || 200,
+        fbs: (parseFloat(formData.glucose) > 120 || parseFloat(formData.fastingGlucose) > 120) ? 1 : 0,
+        exang: formData.exerciseAngina ? 1 : 0,
+        cp: cpMap[formData.chestPainType] ?? 0
+      };
 
-    const assessmentResult = {
-      timestamp: new Date().toISOString(),
-      userProfile: { ...formData, bmi },
-      diabetes: {
-        riskPercentage: calculatedDiabetesRisk,
-        level: calculatedDiabetesRisk > 50 ? 'Moderate-High Risk' : 'Low Risk',
-        shapFactors: [
-          { feature: 'Glucose Level', value: `${formData.glucose} mg/dL`, impact: '+24%', direction: 'up' },
-          { feature: 'Body Mass Index (BMI)', value: `${bmi} kg/m²`, impact: '+18%', direction: 'up' },
-          { feature: 'Age', value: `${formData.age} yrs`, impact: '+12%', direction: 'up' },
-          { feature: 'Family History Proxy', value: formData.fatherDiabetes ? 'Positive' : 'Negative', impact: '+8%', direction: 'up' },
-          { feature: 'Blood Pressure', value: `${formData.bpSystolic}/${formData.bpDiastolic}`, impact: '+2%', direction: 'neutral' },
-        ]
-      },
-      heartDisease: {
-        riskPercentage: calculatedHeartRisk,
-        level: calculatedHeartRisk > 40 ? 'Moderate Risk' : 'Low Risk',
-        shapFactors: [
-          { feature: 'Systolic BP', value: `${formData.bpSystolic} mmHg`, impact: '+16%', direction: 'up' },
-          { feature: 'Cholesterol', value: `${formData.totalCholesterol} mg/dL`, impact: '+12%', direction: 'up' },
-          { feature: 'Exercise Angina', value: formData.exerciseAngina ? 'Yes' : 'No', impact: '+8%', direction: 'up' },
-          { feature: 'Chest Pain Type', value: formData.chestPainType, impact: '+5%', direction: 'neutral' },
-        ]
-      },
-      healthScore: calculatedDiabetesRisk > 50 ? 74 : 88
-    };
+      setLoadingStage('Computing Per-Feature SHAP Contribution Vectors...');
+      const res = await api.post('/predict', payload);
+      const predictionResults = res.data;
 
-    localStorage.setItem('risklens_latest_prediction', JSON.stringify(assessmentResult));
-    navigate('/dashboard');
+      const fullRecord = {
+        timestamp: new Date().toISOString(),
+        input_payload: payload,
+        results: predictionResults,
+        diabetes: predictionResults.diabetes,
+        heartDisease: predictionResults.heartDisease
+      };
+
+      localStorage.setItem('risklens_latest_prediction', JSON.stringify(fullRecord));
+      navigate('/dashboard');
+    } catch (err: any) {
+      console.error('Failed to submit prediction:', err);
+      setErrorMsg(err.response?.data?.detail || 'Failed to submit health assessment to backend API. Ensure backend server is running on http://localhost:8000.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const stepsList = [
@@ -238,10 +172,10 @@ export const AssessmentPage: React.FC = () => {
     'Family History',
     'Symptoms',
     'Vitals',
-    'Lab OCR',
+    'Lab Report',
     'Mental Wellness',
     'Wearables',
-    'Health Score'
+    'Review & Submit'
   ];
 
   return (
@@ -285,56 +219,14 @@ export const AssessmentPage: React.FC = () => {
               style={{ width: `${currentStep * 10}%` }}
             ></div>
           </div>
-          {/* Step Pill Indicators */}
-          <div className="hidden sm:flex justify-between mt-3 text-[10px] font-semibold text-slate-400">
-            {stepsList.map((st, idx) => (
-              <span
-                key={st}
-                className={`cursor-pointer transition-colors ${
-                  idx + 1 === currentStep
-                    ? 'text-teal-700 font-bold'
-                    : idx + 1 < currentStep
-                    ? 'text-slate-700'
-                    : 'text-slate-400'
-                }`}
-                onClick={() => setCurrentStep(idx + 1)}
-              >
-                0{idx + 1}
-              </span>
-            ))}
-          </div>
         </div>
 
         {/* Form Card Container */}
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-200/40 p-6 sm:p-10 relative">
-          {/* Preset Buttons Bar on Step 1 */}
-          {currentStep === 1 && (
-            <div className="mb-8 p-4 bg-teal-50/60 border border-teal-200/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-bold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-teal-600" />
-                  Fast-Track Demo Presets
-                </div>
-                <p className="text-xs text-teal-700 mt-0.5">
-                  Auto-fill all 10 steps for an instant ML evaluation test.
-                </p>
-              </div>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => loadPreset('moderate')}
-                  className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
-                >
-                  ⚡ Moderate Risk Demo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => loadPreset('healthy')}
-                  className="px-3.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                >
-                  🌱 Healthy Demo
-                </button>
-              </div>
+          {errorMsg && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              <span>{errorMsg}</span>
             </div>
           )}
 
@@ -344,7 +236,7 @@ export const AssessmentPage: React.FC = () => {
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Basic Profile</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Tell us about your fundamental physical parameters for accurate BMI and risk calculation.
+                  Enter your physical parameters for accurate BMI and disease risk calculations.
                 </p>
               </div>
 
@@ -358,7 +250,7 @@ export const AssessmentPage: React.FC = () => {
                     value={formData.age}
                     onChange={(e) => handleInputChange('age', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="45"
+                    placeholder="e.g. 45"
                   />
                 </div>
 
@@ -373,7 +265,6 @@ export const AssessmentPage: React.FC = () => {
                   >
                     <option value="female">Female</option>
                     <option value="male">Male</option>
-                    <option value="other">Other</option>
                   </select>
                 </div>
 
@@ -386,7 +277,7 @@ export const AssessmentPage: React.FC = () => {
                     value={formData.height}
                     onChange={(e) => handleInputChange('height', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="165"
+                    placeholder="e.g. 168"
                   />
                 </div>
 
@@ -399,7 +290,7 @@ export const AssessmentPage: React.FC = () => {
                     value={formData.weight}
                     onChange={(e) => handleInputChange('weight', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="72"
+                    placeholder="e.g. 70"
                   />
                 </div>
               </div>
@@ -414,8 +305,8 @@ export const AssessmentPage: React.FC = () => {
                     {bmi} <span className="text-xs text-slate-400 font-normal">kg/m²</span>
                   </div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-extrabold ${getBmiCategory(parseFloat(bmi)).color}`}>
-                  {getBmiCategory(parseFloat(bmi)).label}
+                <span className={`px-3 py-1 rounded-full text-xs font-extrabold ${getBmiCategory(bmi).color}`}>
+                  {getBmiCategory(bmi).label}
                 </span>
               </div>
             </div>
@@ -427,7 +318,7 @@ export const AssessmentPage: React.FC = () => {
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Lifestyle & Habits</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Lifestyle factors inform the LLM personalization layer for tailored advice.
+                  Lifestyle variables inform machine learning parameters and personalized advice.
                 </p>
               </div>
 
@@ -441,7 +332,7 @@ export const AssessmentPage: React.FC = () => {
                     onChange={(e) => handleInputChange('exercise', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
                   >
-                    <option value="low">Sedentary / Rare exercise</option>
+                    <option value="low">Low / Sedentary</option>
                     <option value="moderate">Moderate (1-3 days/week)</option>
                     <option value="high">Active (4+ days/week)</option>
                   </select>
@@ -456,9 +347,9 @@ export const AssessmentPage: React.FC = () => {
                     onChange={(e) => handleInputChange('diet', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
                   >
-                    <option value="poor">High processed foods & sugar</option>
-                    <option value="average">Balanced / Average diet</option>
-                    <option value="healthy">Plant-rich / Mediterranean diet</option>
+                    <option value="poor">High processed foods</option>
+                    <option value="average">Balanced diet</option>
+                    <option value="healthy">Plant-rich / Mediterranean</option>
                   </select>
                 </div>
 
@@ -499,23 +390,22 @@ export const AssessmentPage: React.FC = () => {
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Medical History</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Select any diagnosed pre-existing conditions or clinical indicators.
+                  Select any pre-existing medical diagnoses.
                 </p>
               </div>
 
               <div className="space-y-3">
                 {[
-                  { key: 'hypertension', label: 'Hypertension (High Blood Pressure)', desc: 'Diagnosed BP over 130/80 mmHg' },
-                  { key: 'highCholesterol', label: 'High Cholesterol (Hyperlipidemia)', desc: 'Total cholesterol > 200 mg/dL' },
-                  { key: 'preDiabetes', label: 'Pre-Diabetes / Borderline Glucose', desc: 'Fasting glucose between 100-125 mg/dL' },
-                  { key: 'gestationalDiabetes', label: 'Gestational Diabetes (if applicable)', desc: 'Elevated blood sugar during pregnancy' },
-                  { key: 'previousHeartCondition', label: 'Previous Cardiovascular Event', desc: 'Prior angina, arrhythmia, or stenting' },
+                  { key: 'hypertension', label: 'Hypertension (High Blood Pressure)', desc: 'BP ≥ 130/80 mmHg' },
+                  { key: 'highCholesterol', label: 'High Cholesterol (Hyperlipidemia)', desc: 'Total cholesterol ≥ 200 mg/dL' },
+                  { key: 'preDiabetes', label: 'Pre-Diabetes / Borderline Glucose', desc: 'Glucose 100-125 mg/dL' },
+                  { key: 'previousHeartCondition', label: 'Previous Cardiovascular Event', desc: 'Prior stroke, angina, or cardiac intervention' },
                 ].map((item) => (
                   <label
                     key={item.key}
                     className={`flex items-start p-4 rounded-xl border transition-all cursor-pointer ${
                       (formData as any)[item.key]
-                        ? 'border-teal-500 bg-teal-50/40 text-slate-900'
+                        ? 'border-teal-500 bg-teal-50/40 text-slate-900 font-semibold'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
@@ -526,7 +416,7 @@ export const AssessmentPage: React.FC = () => {
                       className="mt-1 w-4 h-4 text-teal-600 rounded-md focus:ring-teal-500"
                     />
                     <div className="ml-3">
-                      <span className="font-semibold text-sm block">{item.label}</span>
+                      <span className="text-sm block">{item.label}</span>
                       <span className="text-xs text-slate-500 block mt-0.5">{item.desc}</span>
                     </div>
                   </label>
@@ -541,7 +431,7 @@ export const AssessmentPage: React.FC = () => {
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Family History</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Family genetic proxies contribute to the Diabetes Pedigree Proxy and Heart Risk models.
+                  Family health history indicators.
                 </p>
               </div>
 
@@ -551,7 +441,6 @@ export const AssessmentPage: React.FC = () => {
                   { key: 'fatherHeartDisease', label: 'Father has Heart Disease / Stroke' },
                   { key: 'motherDiabetes', label: 'Mother has Type 2 Diabetes' },
                   { key: 'motherHeartDisease', label: 'Mother has Heart Disease / Stroke' },
-                  { key: 'siblingDiabetes', label: 'Sibling with Early Metabolic Condition' },
                 ].map((item) => (
                   <label
                     key={item.key}
@@ -580,7 +469,7 @@ export const AssessmentPage: React.FC = () => {
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Current Symptoms</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Adaptive questionnaire maps symptom types to UCI Heart Disease chest pain parameters.
+                  Maps chest pain and exercise angina to Heart Disease model parameters.
                 </p>
               </div>
 
@@ -594,18 +483,17 @@ export const AssessmentPage: React.FC = () => {
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
                 >
                   <option value="none">None — No chest tightness or pain</option>
-                  <option value="atypical">Atypical Angina — Occasional tightness unrelated to exertion</option>
+                  <option value="atypical">Atypical Angina — Occasional tightness</option>
                   <option value="typical">Typical Angina — Pressure during physical stress</option>
-                  <option value="non-anginal">Non-Anginal Pain — Sharp momentary discomfort</option>
+                  <option value="non-anginal">Non-Anginal Pain — Sharp brief pain</option>
                 </select>
               </div>
 
               <div className="space-y-3 pt-2">
                 {[
-                  { key: 'exerciseAngina', label: 'Exercise-Induced Angina', desc: 'Chest tightness or discomfort when walking uphill or exercising' },
-                  { key: 'shortnessOfBreath', label: 'Shortness of Breath', desc: 'Difficulty catching breath during moderate activity' },
-                  { key: 'frequentUrination', label: 'Frequent Urination', desc: 'Increased urge, particularly at night' },
-                  { key: 'unexplainedFatigue', label: 'Unexplained Persistent Fatigue', desc: 'Feeling unusually drained despite adequate rest' },
+                  { key: 'exerciseAngina', label: 'Exercise-Induced Angina', desc: 'Chest tightness when walking or exercising' },
+                  { key: 'shortnessOfBreath', label: 'Shortness of Breath', desc: 'Difficulty breathing during moderate activity' },
+                  { key: 'frequentUrination', label: 'Frequent Urination', desc: 'Increased urge, especially at night' },
                 ].map((item) => (
                   <label
                     key={item.key}
@@ -637,7 +525,7 @@ export const AssessmentPage: React.FC = () => {
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Clinical Vitals</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Core numeric inputs evaluated directly by the XGBoost machine learning model.
+                  Quantitative inputs evaluated by XGBoost & Logistic Regression models.
                 </p>
               </div>
 
@@ -651,9 +539,8 @@ export const AssessmentPage: React.FC = () => {
                     value={formData.glucose}
                     onChange={(e) => handleInputChange('glucose', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="128"
+                    placeholder="e.g. 115"
                   />
-                  <p className="text-[11px] text-slate-400 mt-1">Normal: &lt; 100 mg/dL • Elevated: 100-125 • Diabetes: 126+</p>
                 </div>
 
                 <div>
@@ -665,9 +552,8 @@ export const AssessmentPage: React.FC = () => {
                     value={formData.totalCholesterol}
                     onChange={(e) => handleInputChange('totalCholesterol', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="215"
+                    placeholder="e.g. 210"
                   />
-                  <p className="text-[11px] text-slate-400 mt-1">Desirable: &lt; 200 mg/dL • Borderline: 200-239</p>
                 </div>
 
                 <div>
@@ -679,7 +565,7 @@ export const AssessmentPage: React.FC = () => {
                     value={formData.bpSystolic}
                     onChange={(e) => handleInputChange('bpSystolic', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="134"
+                    placeholder="e.g. 130"
                   />
                 </div>
 
@@ -692,47 +578,27 @@ export const AssessmentPage: React.FC = () => {
                     value={formData.bpDiastolic}
                     onChange={(e) => handleInputChange('bpDiastolic', e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="86"
+                    placeholder="e.g. 85"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Step 7: Optional Lab OCR */}
+          {/* Step 7: Optional Lab Report */}
           {currentStep === 7 && (
             <div className="space-y-6">
               <div>
-                <h2 className="font-heading text-2xl font-bold text-slate-900">Optional Lab Report Upload</h2>
+                <h2 className="font-heading text-2xl font-bold text-slate-900">Lab Report Integration</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Upload your recent blood panel PDF or image to extract vitals automatically.
+                  Optional: Upload blood panel report to import glucose & cholesterol automatically.
                 </p>
               </div>
 
               <div className="border-2 border-dashed border-slate-200 hover:border-teal-400 rounded-2xl p-8 text-center bg-slate-50/50 transition-colors">
                 <Upload className="w-10 h-10 text-teal-600 mx-auto mb-3" />
-                <h3 className="font-semibold text-slate-800 text-sm">Upload Blood Test PDF or Image</h3>
-                <p className="text-xs text-slate-400 mt-1">Supports Quest Diagnostics, LabCorp, or local lab panels (PDF, PNG, JPG)</p>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleInputChange('labReportUploaded', true);
-                    handleInputChange('glucose', '135');
-                    handleInputChange('totalCholesterol', '224');
-                    alert('OCR Extraction Complete! Fasting Glucose (135 mg/dL) and Total Cholesterol (224 mg/dL) imported into form.');
-                  }}
-                  className="mt-4 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-teal-700 hover:bg-teal-50 transition-colors cursor-pointer"
-                >
-                  ⚡ Click to Simulate OCR Auto-Extract
-                </button>
-
-                {formData.labReportUploaded && (
-                  <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-600" />
-                    <span>Lab report successfully parsed & linked!</span>
-                  </div>
-                )}
+                <h3 className="font-semibold text-slate-800 text-sm">Upload Blood Panel PDF or Image</h3>
+                <p className="text-xs text-slate-400 mt-1">Supports standard lab reports (PDF, PNG, JPG)</p>
               </div>
             </div>
           )}
@@ -743,14 +609,11 @@ export const AssessmentPage: React.FC = () => {
               <div>
                 <h2 className="font-heading text-2xl font-bold text-slate-900">Mental Wellness & Stress</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Psychological wellness contexts influence recovery recommendations.
+                  Perceived stress rating (1 = Low, 10 = High).
                 </p>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                  Perceived Stress Level (1 = Calm, 10 = Severe)
-                </label>
                 <input
                   type="range"
                   min="1"
@@ -762,19 +625,19 @@ export const AssessmentPage: React.FC = () => {
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mt-1">
                   <span>1 (Low)</span>
                   <span className="text-teal-600 font-extrabold text-sm">Rating: {formData.mentalStress}/10</span>
-                  <span>10 (Severe)</span>
+                  <span>10 (High)</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Step 9: Wearables Sync */}
+          {/* Step 9: Wearables */}
           {currentStep === 9 && (
             <div className="space-y-6">
               <div>
-                <h2 className="font-heading text-2xl font-bold text-slate-900">Wearable Health Integration</h2>
+                <h2 className="font-heading text-2xl font-bold text-slate-900">Wearable Devices</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Connect Apple Health, Fitbit, or Garmin to stream continuous resting metrics.
+                  Connect Apple Health, Fitbit, or Garmin for activity streaming.
                 </p>
               </div>
 
@@ -784,46 +647,43 @@ export const AssessmentPage: React.FC = () => {
                     <Watch className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-base">Apple Health / Fitbit</h3>
-                    <p className="text-xs text-slate-400">Synced: {formData.dailySteps} avg steps/day • {formData.restingHeartRate} bpm resting HR</p>
+                    <h3 className="font-bold text-base">Apple Health / Fitbit Sync</h3>
+                    <p className="text-xs text-slate-400">Stream resting heart rate and step counts</p>
                   </div>
                 </div>
-                <span className="px-3 py-1 bg-teal-500/20 text-teal-300 rounded-full text-xs font-bold border border-teal-500/30">
-                  Connected
-                </span>
               </div>
             </div>
           )}
 
-          {/* Step 10: Health Score Review */}
+          {/* Step 10: Review & Submit */}
           {currentStep === 10 && (
             <div className="space-y-6">
               <div className="text-center">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-teal-100 text-teal-700 font-bold mb-3">
                   <Sparkles className="w-8 h-8" />
                 </div>
-                <h2 className="font-heading text-2xl font-bold text-slate-900">Assessment Complete!</h2>
+                <h2 className="font-heading text-2xl font-bold text-slate-900">Ready to Submit Assessment</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Review your parameters and trigger the XGBoost Machine Learning prediction pipeline.
+                  Your inputs will be sent to the RiskLens FastAPI Backend ML pipeline.
                 </p>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Glucose</div>
-                  <div className="text-lg font-extrabold text-slate-900">{formData.glucose} mg/dL</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Age</div>
+                  <div className="text-lg font-extrabold text-slate-900">{formData.age || '—'} yrs</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
                   <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">BMI</div>
                   <div className="text-lg font-extrabold text-slate-900">{bmi} kg/m²</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Blood Pressure</div>
-                  <div className="text-lg font-extrabold text-slate-900">{formData.bpSystolic}/{formData.bpDiastolic}</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">BP Systolic</div>
+                  <div className="text-lg font-extrabold text-slate-900">{formData.bpSystolic || '—'} mmHg</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
-                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Cholesterol</div>
-                  <div className="text-lg font-extrabold text-slate-900">{formData.totalCholesterol} mg/dL</div>
+                  <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Glucose</div>
+                  <div className="text-lg font-extrabold text-slate-900">{formData.glucose || '—'} mg/dL</div>
                 </div>
               </div>
             </div>
@@ -849,7 +709,7 @@ export const AssessmentPage: React.FC = () => {
             >
               {currentStep === 10 ? (
                 <>
-                  <span>Run ML Prediction & SHAP Analysis</span>
+                  <span>Submit to Backend ML API</span>
                   <Sparkles className="w-4 h-4 text-teal-300" />
                 </>
               ) : (
@@ -874,11 +734,8 @@ export const AssessmentPage: React.FC = () => {
               </div>
             </div>
             <div>
-              <h3 className="font-heading text-xl font-bold text-slate-900">Executing ML Screening</h3>
+              <h3 className="font-heading text-xl font-bold text-slate-900">Evaluating RiskLens Backend API</h3>
               <p className="text-xs text-teal-700 font-semibold mt-2 animate-pulse">{loadingStage}</p>
-            </div>
-            <div className="text-[11px] text-slate-400 border-t border-slate-100 pt-4">
-              Running dual XGBoost estimators & generating local SHAP feature impact vectors.
             </div>
           </div>
         </div>

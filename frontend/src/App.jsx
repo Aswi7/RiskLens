@@ -7,7 +7,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { AssessmentPage } from './pages/AssessmentPage';
 import { DashboardPage } from './pages/DashboardPage';
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
 

@@ -7,12 +7,12 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { Navbar } from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 
-export const LandingPage: React.FC = () => {
+export const LandingPage = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   // Accordion State for FAQ
-  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [openFaq, setOpenFaq] = useState(0);
 
   // Chat Demo Content
   const demoChatQuestion = "Why is my diabetes risk higher?";

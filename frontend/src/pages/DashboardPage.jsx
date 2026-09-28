@@ -9,32 +9,25 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
-interface StructuredRecommendations {
-  diet: string[];
-  exercise: string[];
-  sleep: string;
-  urgency: 'low' | 'moderate' | 'high';
-  sharedRiskFactors?: string[];
-  disclaimer: string;
-}
 
-export const DashboardPage: React.FC = () => {
+
+export const DashboardPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [predictionData, setPredictionData] = useState<any>(null);
-  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'shap' | 'recommendations' | 'chat' | 'specialists'>('overview');
+  const [predictionData, setPredictionData] = useState(null);
+  const [historyRecords, setHistoryRecords] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
 
   // Recommendations State
-  const [recommendations, setRecommendations] = useState<StructuredRecommendations | null>(null);
-  const [recLoading, setRecLoading] = useState<boolean>(false);
-  const [recError, setRecError] = useState<string | null>(null);
-  const [checkedItems, setCheckedItems] = useState<{ [key: string]: boolean }>({});
+  const [recommendations, setRecommendations] = useState(null);
+  const [recLoading, setRecLoading] = useState(false);
+  const [recError, setRecError] = useState(null);
+  const [checkedItems, setCheckedItems] = useState({});
 
   // Chat State
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string; time: string; isEmergency?: boolean; skippedLLM?: boolean }>>([
+  const [chatMessages, setChatMessages] = useState([
     {
       sender: 'ai',
       text: `Hello ${user?.name || 'there'}! I'm riskLens AI Health Assistant. How can I assist you with your health indicators today?`,
@@ -88,7 +81,7 @@ export const DashboardPage: React.FC = () => {
     fetchUserHistory();
   }, []);
 
-  const fetchRecommendations = async (predictionId?: string) => {
+  const fetchRecommendations = async (predictionId) => {
     setRecLoading(true);
     setRecError(null);
     try {
@@ -96,7 +89,7 @@ export const DashboardPage: React.FC = () => {
         prediction_id: predictionId || predictionData?.id
       });
       setRecommendations(res.data);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error fetching recommendations:', err);
       setRecError('Failed to load personalized recommendations.');
     } finally {
@@ -104,15 +97,15 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
-  const toggleCheck = (id: string) => {
+  const toggleCheck = (id) => {
     setCheckedItems((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleSendMessage = async (textToSend?: string) => {
+  const handleSendMessage = async (textToSend) => {
     const message = textToSend || chatInput;
     if (!message.trim()) return;
 
-    const userMsg = { sender: 'user' as const, text: message, time: 'Just now' };
+    const userMsg = { sender: 'user' , text: message, time: 'Just now' };
     setChatMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setChatInput('');
     setIsTyping(true);
@@ -318,7 +311,7 @@ export const DashboardPage: React.FC = () => {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => setActiveTab(tab.id )}
                     className={`px-4 py-3 text-xs font-bold rounded-t-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap border-b-2 ${
                       isActive
                         ? 'border-teal-600 text-teal-700 bg-white shadow-2xs'
@@ -370,7 +363,7 @@ export const DashboardPage: React.FC = () => {
                       {predictionData.diabetes?.shapValues &&
                         Object.entries(predictionData.diabetes.shapValues)
                           .slice(0, 3)
-                          .map(([feat, val]: [string, any]) => (
+                          .map(([feat, val]) => (
                             <div key={feat} className="flex items-center justify-between text-xs py-1">
                               <span className="text-slate-600 font-medium">{feat}</span>
                               <span className="font-extrabold text-amber-600">+{Number(val).toFixed(4)}</span>
@@ -413,7 +406,7 @@ export const DashboardPage: React.FC = () => {
                       {predictionData.heartDisease?.shapValues &&
                         Object.entries(predictionData.heartDisease.shapValues)
                           .slice(0, 3)
-                          .map(([feat, val]: [string, any]) => (
+                          .map(([feat, val]) => (
                             <div key={feat} className="flex items-center justify-between text-xs py-1">
                               <span className="text-slate-600 font-medium">{feat}</span>
                               <span className="font-extrabold text-red-600">+{Number(val).toFixed(4)}</span>
@@ -478,7 +471,7 @@ export const DashboardPage: React.FC = () => {
                       Diabetes (TreeExplainer)
                     </h3>
                     {predictionData.diabetes?.shapValues ? (
-                      Object.entries(predictionData.diabetes.shapValues).map(([feat, val]: [string, any]) => (
+                      Object.entries(predictionData.diabetes.shapValues).map(([feat, val]) => (
                         <div key={feat} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
                           <span className="font-bold text-slate-800">{feat}</span>
                           <span className={`font-extrabold ${Number(val) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
@@ -497,7 +490,7 @@ export const DashboardPage: React.FC = () => {
                       Heart Disease (LinearExplainer)
                     </h3>
                     {predictionData.heartDisease?.shapValues ? (
-                      Object.entries(predictionData.heartDisease.shapValues).map(([feat, val]: [string, any]) => (
+                      Object.entries(predictionData.heartDisease.shapValues).map(([feat, val]) => (
                         <div key={feat} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
                           <span className="font-bold text-slate-800">{feat}</span>
                           <span className={`font-extrabold ${Number(val) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>

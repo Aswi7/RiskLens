@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Activity, ArrowRight, LogOut, Sparkles, Menu, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export const Navbar: React.FC = () => {
+export const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,7 +27,7 @@ export const Navbar: React.FC = () => {
     }
   };
 
-  const scrollToSection = (id: string) => {
+  const scrollToSection = (id) => {
     setMobileMenuOpen(false);
     if (location.pathname !== '/') {
       navigate('/#' + id);

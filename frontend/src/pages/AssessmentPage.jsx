@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Activity, ArrowRight, ArrowLeft, Check, Sparkles, Upload, Watch, Lock, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 
-export const AssessmentPage: React.FC = () => {
+export const AssessmentPage = () => {
   const navigate = useNavigate();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingStage, setLoadingStage] = useState('');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   // Form Data State
   const [formData, setFormData] = useState({
@@ -67,7 +67,7 @@ export const AssessmentPage: React.FC = () => {
   const weightKg = parseFloat(formData.weight) || 0;
   const bmi = heightM > 0 && weightKg > 0 ? (weightKg / (heightM * heightM)).toFixed(1) : '—';
 
-  const getBmiCategory = (valStr: string) => {
+  const getBmiCategory = (valStr) => {
     const val = parseFloat(valStr);
     if (!val || isNaN(val)) return { label: 'Enter Height & Weight', color: 'text-slate-500 bg-slate-100' };
     if (val < 18.5) return { label: 'Underweight Zone', color: 'text-amber-600 bg-amber-50' };
@@ -76,12 +76,12 @@ export const AssessmentPage: React.FC = () => {
     return { label: 'Obese Zone', color: 'text-rose-600 bg-rose-50' };
   };
 
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   // Fast-Track Demo Presets for Quick Evaluation
-  const loadPreset = (type: 'moderate' | 'healthy') => {
+  const loadPreset = (type) => {
     if (type === 'moderate') {
       setFormData({
         age: '48',
@@ -192,7 +192,7 @@ export const AssessmentPage: React.FC = () => {
       await new Promise((r) => setTimeout(r, 400));
       setLoadingStage('Evaluating Diabetes XGBoost Model & Heart Disease Logistic Model...');
 
-      const cpMap: { [key: string]: number } = {
+      const cpMap = {
         none: 0,
         atypical: 1,
         typical: 2,
@@ -244,7 +244,7 @@ export const AssessmentPage: React.FC = () => {
 
       localStorage.setItem('risklens_latest_prediction', JSON.stringify(fullRecord));
       navigate('/dashboard');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to submit prediction:', err);
       setErrorMsg(err.response?.data?.detail || 'Failed to submit health assessment to backend API. Ensure backend server is running on http://localhost:8000.');
     } finally {
@@ -522,14 +522,14 @@ export const AssessmentPage: React.FC = () => {
                   <label
                     key={item.key}
                     className={`flex items-start p-4 rounded-xl border transition-all cursor-pointer ${
-                      (formData as any)[item.key]
+                      formData[item.key]
                         ? 'border-teal-500 bg-teal-50/40 text-slate-900 font-semibold'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
                     <input
                       type="checkbox"
-                      checked={(formData as any)[item.key]}
+                      checked={formData[item.key]}
                       onChange={(e) => handleInputChange(item.key, e.target.checked)}
                       className="mt-1 w-4 h-4 text-teal-600 rounded-md focus:ring-teal-500"
                     />
@@ -563,14 +563,14 @@ export const AssessmentPage: React.FC = () => {
                   <label
                     key={item.key}
                     className={`flex items-center p-4 rounded-xl border transition-all cursor-pointer ${
-                      (formData as any)[item.key]
+                      formData[item.key]
                         ? 'border-teal-500 bg-teal-50/40 text-slate-900 font-semibold'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
                     <input
                       type="checkbox"
-                      checked={(formData as any)[item.key]}
+                      checked={formData[item.key]}
                       onChange={(e) => handleInputChange(item.key, e.target.checked)}
                       className="w-4 h-4 text-teal-600 rounded-md focus:ring-teal-500"
                     />
@@ -616,14 +616,14 @@ export const AssessmentPage: React.FC = () => {
                   <label
                     key={item.key}
                     className={`flex items-start p-4 rounded-xl border transition-all cursor-pointer ${
-                      (formData as any)[item.key]
+                      formData[item.key]
                         ? 'border-teal-500 bg-teal-50/40 text-slate-900 font-semibold'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
                     <input
                       type="checkbox"
-                      checked={(formData as any)[item.key]}
+                      checked={formData[item.key]}
                       onChange={(e) => handleInputChange(item.key, e.target.checked)}
                       className="mt-1 w-4 h-4 text-teal-600 rounded-md focus:ring-teal-500"
                     />

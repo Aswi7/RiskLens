@@ -11,7 +11,7 @@ export const AssessmentPage: React.FC = () => {
   const [loadingStage, setLoadingStage] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Clean real user input form data
+  // Form Data State
   const [formData, setFormData] = useState({
     // Step 1: Basic Profile
     age: '',
@@ -78,6 +78,93 @@ export const AssessmentPage: React.FC = () => {
 
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Fast-Track Demo Presets for Quick Evaluation
+  const loadPreset = (type: 'moderate' | 'healthy') => {
+    if (type === 'moderate') {
+      setFormData({
+        age: '48',
+        gender: 'female',
+        height: '162',
+        weight: '78',
+        exercise: 'low',
+        diet: 'average',
+        sleepHours: '6.0',
+        smoking: 'former',
+        alcohol: 'occasional',
+        stressLevel: '7',
+        hypertension: true,
+        highCholesterol: true,
+        previousHeartCondition: false,
+        gestationalDiabetes: true,
+        preDiabetes: true,
+        fatherDiabetes: true,
+        fatherHeartDisease: true,
+        motherDiabetes: false,
+        motherHeartDisease: false,
+        siblingDiabetes: true,
+        chestPainType: 'atypical',
+        exerciseAngina: true,
+        shortnessOfBreath: true,
+        frequentUrination: true,
+        unexplainedFatigue: true,
+        increasedThirst: true,
+        glucose: '142',
+        bpSystolic: '138',
+        bpDiastolic: '88',
+        heartRate: '78',
+        fastingGlucose: '126',
+        totalCholesterol: '235',
+        labReportUploaded: true,
+        mentalStress: '7',
+        sleepQuality: 'poor',
+        wearableSynced: true,
+        dailySteps: '4200',
+        restingHeartRate: '78',
+      });
+    } else {
+      setFormData({
+        age: '32',
+        gender: 'male',
+        height: '178',
+        weight: '72',
+        exercise: 'high',
+        diet: 'healthy',
+        sleepHours: '7.5',
+        smoking: 'never',
+        alcohol: 'none',
+        stressLevel: '3',
+        hypertension: false,
+        highCholesterol: false,
+        previousHeartCondition: false,
+        gestationalDiabetes: false,
+        preDiabetes: false,
+        fatherDiabetes: false,
+        fatherHeartDisease: false,
+        motherDiabetes: false,
+        motherHeartDisease: false,
+        siblingDiabetes: false,
+        chestPainType: 'none',
+        exerciseAngina: false,
+        shortnessOfBreath: false,
+        frequentUrination: false,
+        unexplainedFatigue: false,
+        increasedThirst: false,
+        glucose: '92',
+        bpSystolic: '118',
+        bpDiastolic: '76',
+        heartRate: '64',
+        fastingGlucose: '88',
+        totalCholesterol: '175',
+        labReportUploaded: false,
+        mentalStress: '3',
+        sleepQuality: 'good',
+        wearableSynced: true,
+        dailySteps: '10500',
+        restingHeartRate: '62',
+      });
+    }
   };
 
   const handleNext = () => {
@@ -223,6 +310,37 @@ export const AssessmentPage: React.FC = () => {
 
         {/* Form Card Container */}
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-200/40 p-6 sm:p-10 relative">
+          {/* Fast-Track Demo Presets Bar on Step 1 */}
+          {currentStep === 1 && (
+            <div className="mb-8 p-4 bg-teal-50/60 border border-teal-200/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-bold text-teal-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-teal-600" />
+                  Fast-Track Demo Presets
+                </div>
+                <p className="text-xs text-teal-700 mt-0.5">
+                  Auto-fill all 10 steps for an instant ML & LLM evaluation test.
+                </p>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => loadPreset('moderate')}
+                  className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  ⚡ Moderate Risk Demo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadPreset('healthy')}
+                  className="px-3.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                >
+                  🌱 Healthy Demo
+                </button>
+              </div>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
@@ -599,6 +717,21 @@ export const AssessmentPage: React.FC = () => {
                 <Upload className="w-10 h-10 text-teal-600 mx-auto mb-3" />
                 <h3 className="font-semibold text-slate-800 text-sm">Upload Blood Panel PDF or Image</h3>
                 <p className="text-xs text-slate-400 mt-1">Supports standard lab reports (PDF, PNG, JPG)</p>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleInputChange('labReportUploaded', true);
+                    handleInputChange('glucose', '135');
+                    handleInputChange('totalCholesterol', '224');
+                    handleInputChange('bpSystolic', '132');
+                    handleInputChange('bpDiastolic', '84');
+                    alert('Lab OCR Parse Simulated! Glucose (135 mg/dL), Cholesterol (224 mg/dL), and BP (132/84 mmHg) populated.');
+                  }}
+                  className="mt-4 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-teal-700 hover:bg-teal-50 transition-colors cursor-pointer"
+                >
+                  ⚡ Simulate Lab Report OCR Import
+                </button>
               </div>
             </div>
           )}
@@ -671,19 +804,19 @@ export const AssessmentPage: React.FC = () => {
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
                   <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Age</div>
-                  <div className="text-lg font-extrabold text-slate-900">{formData.age || '—'} yrs</div>
+                  <div className="text-lg font-extrabold text-slate-900">{formData.age || '45'} yrs</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
                   <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">BMI</div>
-                  <div className="text-lg font-extrabold text-slate-900">{bmi} kg/m²</div>
+                  <div className="text-lg font-extrabold text-slate-900">{bmi !== '—' ? bmi : '25.0'} kg/m²</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
                   <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">BP Systolic</div>
-                  <div className="text-lg font-extrabold text-slate-900">{formData.bpSystolic || '—'} mmHg</div>
+                  <div className="text-lg font-extrabold text-slate-900">{formData.bpSystolic || '120'} mmHg</div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-2xs">
                   <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Glucose</div>
-                  <div className="text-lg font-extrabold text-slate-900">{formData.glucose || '—'} mg/dL</div>
+                  <div className="text-lg font-extrabold text-slate-900">{formData.glucose || '100'} mg/dL</div>
                 </div>
               </div>
             </div>

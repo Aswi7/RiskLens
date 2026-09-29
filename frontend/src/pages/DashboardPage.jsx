@@ -132,7 +132,8 @@ export const DashboardPage = () => {
           text: replyData.reply,
           time: 'Just now',
           isEmergency: replyData.isEmergency,
-          skippedLLM: replyData.skippedLLM
+          skippedLLM: replyData.skippedLLM,
+          citations: replyData.citations || []
         }
       ]);
     } catch (err) {
@@ -685,6 +686,19 @@ export const DashboardPage = () => {
                             </div>
                           )}
                           <p className="whitespace-pre-line">{msg.text}</p>
+                          {msg.citations && msg.citations.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-slate-200/60 flex flex-wrap gap-1.5 items-center">
+                              <span className="text-[10px] font-semibold text-teal-800">Source:</span>
+                              {msg.citations.map((cit, idx) => {
+                                const docName = typeof cit === 'string' ? cit : cit.sourceDocument;
+                                return (
+                                  <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-medium border border-teal-200">
+                                    📖 {docName}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                           <div className="flex items-center justify-between text-[9px] opacity-60 mt-1">
                             {msg.skippedLLM && <span>Pre-Safety Guardrail Triggered</span>}
                             <span className="ml-auto">{msg.time}</span>

@@ -35,6 +35,7 @@ class ChatResponse(BaseModel):
     reply: str = Field(..., description="Assistant response content")
     isEmergency: bool = Field(False, description="True if acute emergency red flags were detected")
     skippedLLM: bool = Field(False, description="True if LLM call was skipped due to pre-safety filter match")
+    citations: Optional[List[Dict[str, str]]] = Field(default=[], description="List of medical knowledge source citations used")
     disclaimer: str = Field(
         default="RiskLens health assistant provides general educational information only. Seek immediate medical care for emergency symptoms or consult your doctor for prescription guidance.",
         description="Medical safety disclaimer"

@@ -39,12 +39,13 @@ STRICT SAFETY CONSTRAINTS:
 """
 
 CHAT_SYSTEM_PROMPT = """You are RiskLens AI Health Assistant, a helpful, safe, and empathetic AI assistant specialized in preventive health education.
-You are answering follow-up questions from a user regarding their RiskLens assessment.
+You are answering follow-up questions from a user regarding their RiskLens assessment and general medical inquiries.
 
-STRICT SAFETY CONSTRAINTS:
-1. NO DIAGNOSIS OR MEDICATION: Do not issue diagnoses or prescribe medication dosages.
-2. GROUNDED IN CONTEXT: Ground your answers in the user's RiskLens assessment results, SHAP drivers, and lifestyle recommendations provided in context.
-3. CONCISE & EMPATHETIC: Keep answers supportive, clear, and easy to understand.
+STRICT SAFETY & CITATION CONSTRAINTS:
+1. NO DIAGNOSIS OR MEDICATION: Do not issue clinical diagnoses or prescribe medication dosages.
+2. CONTEXT GROUNDING: Ground your answers in the user's RiskLens assessment results, SHAP drivers, and any provided Reference Medical Information.
+3. SOURCE CITATIONS: When using content from the "Reference medical information:" section, cite the source document name explicitly using format: [Source: Source Document Name]. If NO reference medical information was provided or relevant, answer using constrained general guidance and DO NOT fabricate citations.
+4. CONCISE & EMPATHETIC: Keep answers supportive, clear, and easy to understand.
 """
 
 MEDICATION_PATTERNS = [
@@ -243,10 +244,16 @@ INPUT PAYLOAD:
     return fallback_recommendations_generator(prediction_results, input_payload)
 
 
-def generate_chat_reply(user_message: str, history: List[ChatMessage], context: Dict[str, Any]) -> ChatResponse:
+def generate_chat_reply(
+    user_message: str,
+    history: List[ChatMessage],
+    context: Dict[str, Any],
+    retrieved_chunks: Optional[List[Dict[str, Any]]] = None
+) -> ChatResponse:
     """
-    Generates chat reply. Runs pre-LLM safety filter FIRST before every call.
-    If matched, skips LLM entirely and returns fixed safe response.
+    Generates chat reply with optional RAG knowledge grounding.
+    Runs pre-LLM safety filter FIRST before every call.
+    If matched, skips LLM entirely and returns fixed safe response without calling RAG.
     """
     # PRE-LLM SAFETY FILTER CHECK (Non-negotiable)
     is_matched, safe_reply, is_emergency = check_pre_llm_safety_filters(user_message)
@@ -254,13 +261,30 @@ def generate_chat_reply(user_message: str, history: List[ChatMessage], context: 
         return ChatResponse(
             reply=safe_reply,
             isEmergency=is_emergency,
-            skippedLLM=True
+            skippedLLM=True,
+            citations=[]
         )
 
     gemini_key = settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     openai_key = settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
 
-    full_prompt = f"USER QUESTION: {user_message}\n\nUSER RISKLENS CONTEXT:\n{json.dumps(context, indent=2)}"
+    retrieved_chunks = retrieved_chunks or []
+    citations = []
+    rag_text_block = ""
+
+    if retrieved_chunks:
+        rag_lines = ["\nReference medical information:"]
+        seen_sources = set()
+        for idx, chunk in enumerate(retrieved_chunks, 1):
+            src_name = chunk.get("sourceDocument", "Medical Reference")
+            src_url = chunk.get("sourceUrl", "")
+            rag_lines.append(f"[{idx}] Source Document: {src_name}\nContent: {chunk.get('chunkText', '')}\n")
+            if src_name not in seen_sources:
+                seen_sources.add(src_name)
+                citations.append({"sourceDocument": src_name, "sourceUrl": src_url})
+        rag_text_block = "\n".join(rag_lines)
+
+    full_prompt = f"USER QUESTION: {user_message}\n\nUSER RISKLENS CONTEXT:\n{json.dumps(context, indent=2)}{rag_text_block}"
 
     # 1. Gemini LLM Call
     if gemini_key:
@@ -275,7 +299,7 @@ def generate_chat_reply(user_message: str, history: List[ChatMessage], context: 
                 resp.raise_for_status()
                 data = resp.json()
                 reply_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return ChatResponse(reply=reply_text, isEmergency=False, skippedLLM=False)
+                return ChatResponse(reply=reply_text, isEmergency=False, skippedLLM=False, citations=citations)
         except Exception as e:
             logger.warning(f"Gemini Chat API call failed ({e}). Using fallback.")
 
@@ -284,14 +308,15 @@ def generate_chat_reply(user_message: str, history: List[ChatMessage], context: 
         try:
             client = OpenAI(api_key=openai_key)
             messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
-            if context:
-                messages.append({"role": "system", "content": f"CONTEXT:\n{json.dumps(context, indent=2)}"})
+            if context or rag_text_block:
+                ctx_text = f"PERSONAL CONTEXT:\n{json.dumps(context, indent=2)}{rag_text_block}"
+                messages.append({"role": "system", "content": ctx_text})
             for msg in history[-6:]:
                 messages.append({"role": msg.role, "content": msg.content})
             messages.append({"role": "user", "content": user_message})
 
             resp = client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.5)
-            return ChatResponse(reply=resp.choices[0].message.content, isEmergency=False, skippedLLM=False)
+            return ChatResponse(reply=resp.choices[0].message.content, isEmergency=False, skippedLLM=False, citations=citations)
         except Exception as e:
             logger.warning(f"OpenAI Chat API call failed ({e}). Using fallback.")
 
@@ -310,4 +335,9 @@ def generate_chat_reply(user_message: str, history: List[ChatMessage], context: 
         f"To address your question ('{user_message}'): Focus on optimizing your primary SHAP risk factors through balanced nutrition, "
         f"consistent physical activity, and discussing targeted biomarker testing with your physician at your next visit."
     )
-    return ChatResponse(reply=fallback_reply, isEmergency=False, skippedLLM=False)
+
+    if citations:
+        sources_list = ", ".join([c["sourceDocument"] for c in citations])
+        fallback_reply += f"\n\n[Source: {sources_list}]"
+
+    return ChatResponse(reply=fallback_reply, isEmergency=False, skippedLLM=False, citations=citations)

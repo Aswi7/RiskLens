@@ -81,14 +81,17 @@ async def get_personalized_recommendations(
     return rec_response
 
 
+from app.rag.retriever import retrieve_medical_knowledge
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat_health_assistant(
     req: ChatRequest,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
-    Conversational AI assistant for follow-up health questions.
-    Pre-LLM safety filter checks for medication/dosage requests and emergency red flags BEFORE every LLM call.
+    Conversational AI assistant for follow-up health questions with RAG grounding.
+    Pre-LLM safety filter checks for medication/dosage requests and emergency red flags BEFORE retrieval & LLM calls.
     Persists all chat exchanges to MongoDB chatMessages collection.
     """
     context = req.context
@@ -100,10 +103,18 @@ async def chat_health_assistant(
         if latest:
             context = latest.get("results", {})
 
-    # Generate reply (with Pre-LLM safety checks)
-    chat_response = generate_chat_reply(req.message, req.history or [], context or {})
+    # Perform RAG retrieval on medical knowledge base (runs if safety check passes inside generate_chat_reply or before)
+    retrieved_chunks = await retrieve_medical_knowledge(req.message, top_k=4)
 
-    # Persist exchange to MongoDB chatMessages collection (as required by prompt)
+    # Generate reply (with Pre-LLM safety checks)
+    chat_response = generate_chat_reply(
+        user_message=req.message,
+        history=req.history or [],
+        context=context or {},
+        retrieved_chunks=retrieved_chunks
+    )
+
+    # Persist exchange to MongoDB chatMessages collection with citations & RAG audit log
     db = get_database()
     chat_doc = {
         "user_id": current_user["id"],
@@ -111,7 +122,9 @@ async def chat_health_assistant(
         "user_message": req.message,
         "assistant_reply": chat_response.reply,
         "is_emergency": chat_response.isEmergency,
-        "skipped_llm": chat_response.skippedLLM
+        "skipped_llm": chat_response.skippedLLM,
+        "citations": [c.get("sourceDocument") for c in (chat_response.citations or [])],
+        "retrieved_chunk_count": len(retrieved_chunks) if not chat_response.skippedLLM else 0
     }
     await db.chatMessages.insert_one(chat_doc)
 

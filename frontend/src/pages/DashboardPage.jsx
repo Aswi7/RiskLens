@@ -16,6 +16,7 @@ export const DashboardPage = () => {
   const navigate = useNavigate();
 
   const [predictionData, setPredictionData] = useState(null);
+  const [healthScoreData, setHealthScoreData] = useState(null);
   const [historyRecords, setHistoryRecords] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -37,10 +38,23 @@ export const DashboardPage = () => {
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
+  // Fetch health score from backend GET /health-score
+  const fetchHealthScore = async () => {
+    try {
+      const res = await api.get('/health-score');
+      if (res.data) {
+        setHealthScoreData(res.data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch health score:', e);
+    }
+  };
+
   // Fetch prediction history from backend for the logged-in user
   useEffect(() => {
     const fetchUserHistory = async () => {
       setLoadingHistory(true);
+      fetchHealthScore();
       try {
         const historyRes = await api.get('/history');
         if (historyRes.data && historyRes.data.length > 0) {
@@ -329,6 +343,77 @@ export const DashboardPage = () => {
             {/* TAB 1: OVERVIEW */}
             {activeTab === 'overview' && (
               <div className="space-y-8">
+                {/* Transparent Non-ML Health Score Card (Placed BEFORE Disease Risk Section) */}
+                {(() => {
+                  const hs = healthScoreData || predictionData?.input_payload?.health_score;
+                  if (!hs) return null;
+                  return (
+                    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center font-bold text-xl">
+                            🏆
+                          </div>
+                          <div>
+                            <h3 className="font-heading font-extrabold text-xl text-slate-900">Overall Health Score</h3>
+                            <p className="text-xs text-slate-500 font-medium">
+                              Transparent Non-ML Wellness Rating derived from your lifestyle answers.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className={`px-4 py-1.5 rounded-full text-xs font-extrabold border uppercase ${
+                            hs.rating === 'Optimal' || hs.rating === 'Good'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            {hs.rating || 'Good'}
+                          </span>
+                          <div className="text-3xl font-extrabold text-slate-900">
+                            {hs.total_score} <span className="text-xs font-normal text-slate-400">/ 100</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sub-scores breakdown grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                        {[
+                          { title: 'Lifestyle', icon: '🚬', key: 'lifestyle' },
+                          { title: 'Fitness', icon: '🏃', key: 'fitness' },
+                          { title: 'Nutrition', icon: '🥗', key: 'nutrition' },
+                          { title: 'Sleep', icon: '😴', key: 'sleep' },
+                          { title: 'Stress', icon: '🧘', key: 'stress' }
+                        ].map((sub) => {
+                          const info = hs.breakdown?.[sub.key] || { score: 15, max: 20 };
+                          const pct = (info.score / info.max) * 100;
+                          return (
+                            <div key={sub.key} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5">
+                              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                                <span className="flex items-center gap-1">
+                                  <span>{sub.icon}</span> {sub.title}
+                                </span>
+                                <span className="text-teal-700">{info.score}/{info.max}</span>
+                              </div>
+                              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-teal-600 h-full rounded-full transition-all duration-500"
+                                  style={{ width: `${pct}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl text-[11px] text-slate-500 flex items-center gap-2">
+                        <Info className="w-4 h-4 text-teal-600 shrink-0" />
+                        <span>{hs.formula_documentation || "Transparent weighted formula calculated from non-ML intake (Lifestyle 20, Fitness 20, Nutrition 20, Sleep 20, Stress 20). Placed independently of machine learning disease predictions."}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Type 2 Diabetes Card */}
                   <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">

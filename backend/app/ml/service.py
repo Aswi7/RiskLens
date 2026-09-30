@@ -222,3 +222,173 @@ def process_prediction(payload: Dict[str, Any]) -> Dict[str, Any]:
         "diabetes": diabetes_res,
         "heartDisease": heart_res
     }
+
+
+# ==============================================================================
+# TRANSPARENT NON-ML HEALTH SCORE CALCULATOR
+# IMPORTANT: This transparent rule-based algorithm is strictly for user wellness
+# guidance and health score reporting. It does NOT feed into or alter the
+# XGBoost (Diabetes) or Logistic Regression (Heart Disease) ML models.
+# ==============================================================================
+def compute_health_score(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Computes a transparent 0-100 overall score plus sub-scores (Lifestyle, Fitness,
+    Nutrition, Sleep, Stress) from non-ML lifestyle intake answers.
+    Returns a breakdown dictionary explaining how each sub-score was derived.
+    """
+    # Extract values with fallbacks
+    smoking = str(extract_field_value(payload, "smoking") or "").lower()
+    smoker_num = extract_field_value(payload, "Smoker")
+    alcohol = str(extract_field_value(payload, "alcohol") or "").lower()
+    hvy_alcohol = extract_field_value(payload, "HvyAlcoholConsump")
+
+    exercise = str(extract_field_value(payload, "exercise") or "").lower()
+    phys_act = extract_field_value(payload, "PhysActivity")
+    steps = float(extract_field_value(payload, "dailySteps") or 6000)
+
+    diet = str(extract_field_value(payload, "diet") or "").lower()
+    fruits = extract_field_value(payload, "Fruits")
+    veggies = extract_field_value(payload, "Veggies")
+
+    sleep_hrs = float(extract_field_value(payload, "sleepHours") or 7.0)
+    sleep_qual = str(extract_field_value(payload, "sleepQuality") or "").lower()
+
+    stress_level = float(extract_field_value(payload, "mentalStress") or extract_field_value(payload, "stressLevel") or 5)
+
+    # 1. Lifestyle Sub-score (Max 20 pts)
+    # Smoking component (Max 12 pts)
+    if smoking == "never" or smoker_num == 0:
+        smoke_pts = 12
+    elif smoking == "former":
+        smoke_pts = 7
+    else:
+        smoke_pts = 2
+
+    # Alcohol component (Max 8 pts)
+    if alcohol in ("none", "occasional") or hvy_alcohol == 0:
+        alcohol_pts = 8
+    else:
+        alcohol_pts = 3
+
+    lifestyle_score = min(20, smoke_pts + alcohol_pts)
+
+    # 2. Fitness Sub-score (Max 20 pts)
+    if exercise == "high" or phys_act == 1:
+        ex_pts = 12
+    elif exercise == "moderate":
+        ex_pts = 8
+    else:
+        ex_pts = 4
+
+    if steps >= 10000:
+        step_pts = 8
+    elif steps >= 6000:
+        step_pts = 6
+    elif steps >= 3000:
+        step_pts = 4
+    else:
+        step_pts = 2
+
+    fitness_score = min(20, ex_pts + step_pts)
+
+    # 3. Nutrition Sub-score (Max 20 pts)
+    if diet == "healthy":
+        diet_pts = 12
+    elif diet == "average":
+        diet_pts = 8
+    else:
+        diet_pts = 4
+
+    produce_pts = 0
+    if fruits == 1:
+        produce_pts += 4
+    if veggies == 1:
+        produce_pts += 4
+    if fruits is None and veggies is None and diet == "healthy":
+        produce_pts = 8
+    elif fruits is None and veggies is None and diet == "average":
+        produce_pts = 5
+    elif fruits is None and veggies is None:
+        produce_pts = 2
+
+    nutrition_score = min(20, diet_pts + produce_pts)
+
+    # 4. Sleep Sub-score (Max 20 pts)
+    if 7.0 <= sleep_hrs <= 9.0:
+        hrs_pts = 12
+    elif 6.0 <= sleep_hrs < 7.0 or 9.0 < sleep_hrs <= 10.0:
+        hrs_pts = 8
+    else:
+        hrs_pts = 4
+
+    if sleep_qual in ("good", "excellent"):
+        qual_pts = 8
+    elif sleep_qual == "fair":
+        qual_pts = 5
+    else:
+        qual_pts = 3
+
+    sleep_score = min(20, hrs_pts + qual_pts)
+
+    # 5. Stress Sub-score (Max 20 pts)
+    if stress_level <= 3:
+        stress_score = 20
+    elif stress_level <= 5:
+        stress_score = 16
+    elif stress_level <= 7:
+        stress_score = 10
+    else:
+        stress_score = 5
+
+    total_score = lifestyle_score + fitness_score + nutrition_score + sleep_score + stress_score
+
+    if total_score >= 85:
+        rating = "Optimal"
+    elif total_score >= 70:
+        rating = "Good"
+    elif total_score >= 55:
+        rating = "Fair"
+    else:
+        rating = "Needs Attention"
+
+    breakdown = {
+        "lifestyle": {
+            "score": lifestyle_score,
+            "max": 20,
+            "description": f"Smoking status ({smoking or 'never'}) and alcohol intake rating."
+        },
+        "fitness": {
+            "score": fitness_score,
+            "max": 20,
+            "description": f"Physical activity ({exercise or 'moderate'}) & step volume rating."
+        },
+        "nutrition": {
+            "score": nutrition_score,
+            "max": 20,
+            "description": f"Diet quality ({diet or 'average'}) & produce intake rating."
+        },
+        "sleep": {
+            "score": sleep_score,
+            "max": 20,
+            "description": f"Sleep duration ({sleep_hrs} hrs) & nightly recovery quality rating."
+        },
+        "stress": {
+            "score": stress_score,
+            "max": 20,
+            "description": f"Perceived stress level ({stress_level}/10) rating."
+        }
+    }
+
+    formula_doc = (
+        "Overall Non-ML Health Score (0-100) is calculated as the sum of 5 transparent sub-scores "
+        "(Lifestyle, Fitness, Nutrition, Sleep, Stress - 20 pts each). "
+        "This score is for wellness tracking and is entirely separate from ML disease prediction models."
+    )
+
+    return {
+        "total_score": total_score,
+        "rating": rating,
+        "breakdown": breakdown,
+        "formula_documentation": formula_doc
+    }
+

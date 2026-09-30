@@ -76,6 +76,16 @@ def run_tests():
         assert pred_data["diabetes"]["status"] == "success"
         assert pred_data["heartDisease"]["status"] == "success"
 
+        # 4.5. GET /health-score (Transparent non-ML Health Score & sub-scores breakdown)
+        res = client.get("/health-score", headers=headers)
+        print(f"\n4.5. GET /health-score -> Status {res.status_code}:", res.json())
+        assert res.status_code == 200
+        hs_data = res.json()
+        assert "total_score" in hs_data
+        assert "breakdown" in hs_data
+        assert "lifestyle" in hs_data["breakdown"]
+        assert "fitness" in hs_data["breakdown"]
+
         # 5. POST /recommendations (Structured JSON: diet, exercise, sleep, urgency, disclaimer)
         res = client.post("/recommendations", json={}, headers=headers)
         print(f"\n5. POST /recommendations -> Status {res.status_code}:")

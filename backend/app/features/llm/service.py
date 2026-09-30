@@ -224,14 +224,104 @@ def call_llm_json(prompt: str, system_prompt: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def format_rich_onboarding_context(input_payload: Dict[str, Any]) -> str:
+    """
+    Formats non-ML onboarding steps (Family History by relative, Full Symptoms with severity/duration/frequency,
+    Medical History, Mental Wellness, and Health Score) into readable markdown text for LLM prompts.
+
+    IMPORTANT: These fields feed LLM prompt context and MongoDB storage ONLY;
+    they do NOT feed the XGBoost/Logistic Regression prediction models.
+    """
+    if not input_payload:
+        return ""
+
+    sections = []
+
+    # 1. Family History by Relative
+    fam = input_payload.get("familyHistory") or input_payload.get("family_history_relatives") or {}
+    if isinstance(fam, dict) and fam:
+        fam_lines = ["FAMILY HISTORY (BY RELATIVE):"]
+        for rel, conds in fam.items():
+            if conds:
+                cond_str = ", ".join(conds) if isinstance(conds, list) else str(conds)
+                fam_lines.append(f"- {rel.capitalize()}: {cond_str}")
+            else:
+                fam_lines.append(f"- {rel.capitalize()}: None reported")
+        sections.append("\n".join(fam_lines))
+    elif isinstance(fam, list) and fam:
+        fam_lines = ["FAMILY HISTORY (BY RELATIVE):"]
+        for item in fam:
+            rel = item.get("relative", "Relative")
+            conds = item.get("conditions", [])
+            fam_lines.append(f"- {rel}: {', '.join(conds) if isinstance(conds, list) else str(conds)}")
+        sections.append("\n".join(fam_lines))
+
+    # 2. Full Symptom Selector Details
+    symptoms = input_payload.get("symptoms") or []
+    symp_followups = input_payload.get("symptomFollowups") or {}
+    if symptoms:
+        symp_lines = ["FULL SYMPTOM SELECTOR (SEVERITY / DURATION / FREQUENCY):"]
+        for s in symptoms:
+            if isinstance(s, dict):
+                name = s.get("symptom") or s.get("name") or s.get("key") or "Symptom"
+                sev = s.get("severity", "N/A")
+                dur = s.get("duration", "N/A")
+                freq = s.get("frequency", "N/A")
+                extras = []
+                if "increasedThirst" in s or symp_followups.get("increasedThirst"):
+                    val = s.get("increasedThirst") if "increasedThirst" in s else symp_followups.get("increasedThirst")
+                    extras.append(f"Increased Thirst: {'Yes' if val else 'No'}")
+                if "weightLoss" in s or symp_followups.get("weightLoss"):
+                    val = s.get("weightLoss") if "weightLoss" in s else symp_followups.get("weightLoss")
+                    extras.append(f"Unexplained Weight Loss: {'Yes' if val else 'No'}")
+                extra_str = f" [{', '.join(extras)}]" if extras else ""
+                symp_lines.append(f"- {name} (Severity: {sev}/5, Duration: {dur}, Frequency: {freq}){extra_str}")
+            else:
+                symp_lines.append(f"- {s}")
+        sections.append("\n".join(symp_lines))
+
+    # 3. Diagnosed Medical History
+    med_hist = input_payload.get("medicalHistory") or input_payload.get("medical_history") or []
+    if med_hist:
+        hist_str = ", ".join(med_hist) if isinstance(med_hist, list) else str(med_hist)
+        sections.append(f"DIAGNOSED MEDICAL HISTORY:\n- {hist_str}")
+
+    # 4. Mental Wellness (Optional, Non-Diagnostic Context)
+    mw = input_payload.get("mentalWellness") or input_payload.get("mental_wellness") or {}
+    if isinstance(mw, dict) and not mw.get("skipped", False):
+        mw_lines = ["MENTAL WELLNESS & STRESS (Optional Non-Diagnostic Context):"]
+        if "anxious" in mw:
+            mw_lines.append(f"- Anxious or Nervous: {'Yes' if mw['anxious'] else 'No'}")
+        if "depressed" in mw:
+            mw_lines.append(f"- Down or Depressed: {'Yes' if mw['depressed'] else 'No'}")
+        if "difficultyConcentrating" in mw or "difficulty_concentrating" in mw:
+            val = mw.get("difficultyConcentrating") if "difficultyConcentrating" in mw else mw.get("difficulty_concentrating")
+            mw_lines.append(f"- Difficulty Concentrating: {'Yes' if val else 'No'}")
+        if "notes" in mw and mw["notes"]:
+            mw_lines.append(f"- Wellness Note: {mw['notes']}")
+        sections.append("\n".join(mw_lines))
+
+    # 5. Transparent Non-ML Health Score
+    hs = input_payload.get("health_score") or input_payload.get("healthScore")
+    if isinstance(hs, dict):
+        sections.append(f"TRANSPARENT NON-ML HEALTH SCORE:\n- Overall Score: {hs.get('total_score', 'N/A')}/100 ({hs.get('rating', 'N/A')})")
+
+    if not sections:
+        return ""
+
+    return "\n\n=== ADDITIONAL NON-ML ONBOARDING INTAKE ===\n" + "\n\n".join(sections)
+
+
 def generate_recommendations(prediction_results: Dict[str, Any], input_payload: Dict[str, Any]) -> RecommendationResponse:
-    """Generates validated structured recommendations JSON."""
-    user_prompt = f"""Analyze this user's RiskLens prediction and SHAP data to produce structured health recommendations JSON:
+    """Generates validated structured recommendations JSON enriched with full non-ML intake context."""
+    rich_context_block = format_rich_onboarding_context(input_payload)
+
+    user_prompt = f"""Analyze this user's RiskLens prediction, SHAP data, and non-ML intake to produce structured health recommendations JSON:
 PREDICTION RESULTS:
 {json.dumps(prediction_results, indent=2)}
 
 INPUT PAYLOAD:
-{json.dumps(input_payload, indent=2)}
+{json.dumps(input_payload, indent=2)}{rich_context_block}
 """
 
     json_dict = call_llm_json(user_prompt, RECOMMENDATIONS_SYSTEM_PROMPT)
@@ -251,7 +341,7 @@ def generate_chat_reply(
     retrieved_chunks: Optional[List[Dict[str, Any]]] = None
 ) -> ChatResponse:
     """
-    Generates chat reply with optional RAG knowledge grounding.
+    Generates chat reply with optional RAG knowledge grounding and rich non-ML intake context.
     Runs pre-LLM safety filter FIRST before every call.
     If matched, skips LLM entirely and returns fixed safe response without calling RAG.
     """
@@ -284,7 +374,10 @@ def generate_chat_reply(
                 citations.append({"sourceDocument": src_name, "sourceUrl": src_url})
         rag_text_block = "\n".join(rag_lines)
 
-    full_prompt = f"USER QUESTION: {user_message}\n\nUSER RISKLENS CONTEXT:\n{json.dumps(context, indent=2)}{rag_text_block}"
+    rich_onboarding_block = format_rich_onboarding_context(context if isinstance(context, dict) else {})
+
+    full_prompt = f"USER QUESTION: {user_message}\n\nUSER RISKLENS CONTEXT:\n{json.dumps(context, indent=2)}{rich_onboarding_block}{rag_text_block}"
+
 
     # 1. Gemini LLM Call
     if gemini_key:

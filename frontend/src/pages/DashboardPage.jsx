@@ -3,13 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity, Heart, Activity as PulseIcon, Sparkles,
   MapPin, MessageSquare, Send, RefreshCw,
-  FileText, User as UserIcon, Info, AlertTriangle, CheckSquare, Square, Stethoscope, ArrowRight
+  FileText, User as UserIcon, Info, AlertTriangle, CheckSquare, Square, Stethoscope, ArrowRight,
+  TrendingUp, Navigation, Phone, Search, ExternalLink, Compass
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-
-
 
 export const DashboardPage = () => {
   const { user, logout } = useAuth();
@@ -37,6 +36,15 @@ export const DashboardPage = () => {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+
+  // Nearby Hospitals / Specialists State
+  const [userLat, setUserLat] = useState(null);
+  const [userLng, setUserLng] = useState(null);
+  const [locationInput, setLocationInput] = useState('');
+  const [geoError, setGeoError] = useState(null);
+  const [conditionFilter, setConditionFilter] = useState('auto'); // 'auto', 'diabetes', 'heart', 'both', 'general'
+  const [hospitalsList, setHospitalsList] = useState([]);
+  const [loadingHospitals, setLoadingHospitals] = useState(false);
 
   // Fetch health score from backend GET /health-score
   const fetchHealthScore = async () => {
@@ -95,6 +103,80 @@ export const DashboardPage = () => {
     fetchUserHistory();
   }, []);
 
+  // Fetch Nearby Hospitals & Specialists from Backend API
+  const fetchHospitals = async (lat, lng, locStr, filterOverride) => {
+    setLoadingHospitals(true);
+    try {
+      let inferredCondition = 'general';
+      const dHigh = predictionData?.diabetes?.risk?.isHighRisk;
+      const hHigh = predictionData?.heartDisease?.risk?.isHighRisk;
+      if (dHigh && hHigh) inferredCondition = 'both';
+      else if (dHigh) inferredCondition = 'diabetes';
+      else if (hHigh) inferredCondition = 'heart';
+
+      const activeFilter = filterOverride !== undefined ? filterOverride : conditionFilter;
+      const targetCondition = activeFilter === 'auto' ? inferredCondition : activeFilter;
+
+      const params = {};
+      if (lat && lng) {
+        params.lat = lat;
+        params.lng = lng;
+      }
+      if (locStr) {
+        params.location = locStr;
+      }
+      if (targetCondition) {
+        params.condition = targetCondition;
+      }
+
+      const res = await api.get('/hospitals/nearby', { params });
+      if (res.data && res.data.hospitals) {
+        setHospitalsList(res.data.hospitals);
+      }
+    } catch (err) {
+      console.error('Failed to fetch nearby hospitals:', err);
+    } finally {
+      setLoadingHospitals(false);
+    }
+  };
+
+  // Geolocation Handler
+  const requestGeolocation = () => {
+    setLoadingHospitals(true);
+    setGeoError(null);
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser. Please enter your city or ZIP code below.');
+      setLoadingHospitals(false);
+      fetchHospitals(null, null, locationInput || 'San Francisco, CA');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setUserLat(lat);
+        setUserLng(lng);
+        setGeoError(null);
+        fetchHospitals(lat, lng, null);
+      },
+      (error) => {
+        console.warn('Geolocation permission denied or error:', error);
+        setGeoError('Location access was denied or unavailable. Enter your city or ZIP code below to find nearby specialists.');
+        setLoadingHospitals(false);
+        fetchHospitals(null, null, locationInput || 'San Francisco, CA');
+      },
+      { timeout: 8000 }
+    );
+  };
+
+  // Auto-fetch hospitals on load or predictionData change
+  useEffect(() => {
+    if (predictionData && hospitalsList.length === 0 && !loadingHospitals) {
+      fetchHospitals(userLat, userLng, locationInput);
+    }
+  }, [predictionData]);
+
   const fetchRecommendations = async (predictionId) => {
     setRecLoading(true);
     setRecError(null);
@@ -119,7 +201,7 @@ export const DashboardPage = () => {
     const message = textToSend || chatInput;
     if (!message.trim()) return;
 
-    const userMsg = { sender: 'user' , text: message, time: 'Just now' };
+    const userMsg = { sender: 'user', text: message, time: 'Just now' };
     setChatMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setChatInput('');
     setIsTyping(true);
@@ -165,53 +247,26 @@ export const DashboardPage = () => {
     }
   };
 
-  // Process historical trend data from user's actual prediction history
-  const trendData = historyRecords.length > 0
+  // Process historical trend data from user's actual prediction history (Chronological Ascending)
+  const chronologicalHistory = historyRecords.length > 0
     ? historyRecords
         .slice()
-        .reverse()
-        .map((record, index) => ({
-          month: `Eval ${index + 1}`,
-          diabetesRisk: Math.round((record.results?.diabetes?.risk?.probability || 0) * 100),
-          heartRisk: Math.round((record.results?.heartDisease?.risk?.probability || 0) * 100)
-        }))
-    : [
-        {
-          month: 'Current',
-          diabetesRisk: Math.round((predictionData?.diabetes?.risk?.probability || 0) * 100),
-          heartRisk: Math.round((predictionData?.heartDisease?.risk?.probability || 0) * 100)
-        }
-      ];
-
-  const specialists = [
-    {
-      name: 'Dr. Evelyn Vance, MD',
-      specialty: 'Endocrinologist & Metabolic Health',
-      hospital: 'Metro Medical Center',
-      distance: '1.4 miles away',
-      rating: '4.9 ★ (124 reviews)',
-      phone: '+1 (555) 234-5678',
-      address: '742 Healthcare Blvd, Suite 300'
-    },
-    {
-      name: 'Dr. Marcus Thorne, FACC',
-      specialty: 'Preventive Cardiologist',
-      hospital: 'St. Jude Heart Institute',
-      distance: '2.8 miles away',
-      rating: '4.8 ★ (98 reviews)',
-      phone: '+1 (555) 876-5432',
-      address: '108 Cardiovascular Way'
-    },
-    {
-      name: 'Dr. Sophia Ramirez',
-      specialty: 'Internal Medicine Specialist',
-      hospital: 'University Health Plaza',
-      distance: '3.2 miles away',
-      rating: '4.9 ★ (210 reviews)',
-      phone: '+1 (555) 345-6789',
-      address: '500 Academic Medical Dr'
-    }
-  ];
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+        .map((record, index) => {
+          const d = new Date(record.timestamp);
+          const dateStr = !isNaN(d.getTime())
+            ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : `Eval ${index + 1}`;
+          return {
+            evaluation: `Eval ${index + 1}`,
+            dateStr,
+            fullDate: d.toLocaleString(),
+            diabetesRisk: Math.round((record.results?.diabetes?.risk?.probability || 0) * 100),
+            heartRisk: Math.round((record.results?.heartDisease?.risk?.probability || 0) * 100),
+            healthScore: record.input_payload?.health_score?.total_score || 75
+          };
+        })
+    : [];
 
   const diabetesRiskPct = Math.round((predictionData?.diabetes?.risk?.probability || 0) * 100);
   const heartRiskPct = Math.round((predictionData?.heartDisease?.risk?.probability || 0) * 100);
@@ -296,7 +351,7 @@ export const DashboardPage = () => {
                   Health Report for {user?.name || user?.email || 'User'}
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-300 mt-1">
-                  Evaluated: Type 2 Diabetes (XGBoost) & Heart Disease (Logistic Regression with StandardScaler)
+                  Evaluated: Type 2 Diabetes (XGBoost) &amp; Heart Disease (Logistic Regression with StandardScaler)
                 </p>
               </div>
 
@@ -316,6 +371,7 @@ export const DashboardPage = () => {
             <div className="flex border-b border-slate-200 mb-8 overflow-x-auto gap-2">
               {[
                 { id: 'overview', label: 'Risk Overview', icon: Activity },
+                { id: 'trend', label: 'Risk Trajectory Trend', icon: TrendingUp },
                 { id: 'shap', label: 'SHAP Explainability', icon: Sparkles },
                 { id: 'recommendations', label: 'Personalized Checklist', icon: FileText },
                 { id: 'chat', label: 'AI Health Chatbot', icon: MessageSquare },
@@ -326,7 +382,7 @@ export const DashboardPage = () => {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id )}
+                    onClick={() => setActiveTab(tab.id)}
                     className={`px-4 py-3 text-xs font-bold rounded-t-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap border-b-2 ${
                       isActive
                         ? 'border-teal-600 text-teal-700 bg-white shadow-2xs'
@@ -501,41 +557,91 @@ export const DashboardPage = () => {
                     </div>
                   </div>
                 </div>
-
-                {/* Health Risk Trends Line Chart */}
-                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-6">
-                    <div>
-                      <h3 className="font-heading font-extrabold text-lg text-slate-900">Risk Trajectory Over Time</h3>
-                      <p className="text-xs text-slate-500">Historical prediction tracking ({trendData.length} evaluations)</p>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs font-bold">
-                      <span className="flex items-center gap-1.5 text-amber-600">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Diabetes Risk
-                      </span>
-                      <span className="flex items-center gap-1.5 text-red-600">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> Heart Risk
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={trendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                        <XAxis dataKey="month" stroke="#94A3B8" fontSize={12} />
-                        <YAxis stroke="#94A3B8" fontSize={12} domain={[0, 100]} />
-                        <Tooltip contentStyle={{ backgroundColor: '#0F172A', color: '#fff', borderRadius: '12px' }} />
-                        <Line type="monotone" dataKey="diabetesRisk" stroke="#F59E0B" strokeWidth={3} dot={{ r: 5 }} />
-                        <Line type="monotone" dataKey="heartRisk" stroke="#EF4444" strokeWidth={3} dot={{ r: 5 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
               </div>
             )}
 
-            {/* TAB 2: SHAP EXPLAINABILITY */}
+            {/* TAB 2: TREND TRAJECTORY VIEW */}
+            {activeTab === 'trend' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="font-heading text-2xl font-bold text-slate-900">Longitudinal Risk Trajectory</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                    Tracks changes in your Type 2 Diabetes and Heart Disease risk probabilities over time.
+                  </p>
+                </div>
+
+                {chronologicalHistory.length >= 2 ? (
+                  /* IF 2+ past predictions exist: render interactive Recharts Line Chart */
+                  <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                      <div>
+                        <div className="text-xs font-extrabold text-teal-700 uppercase tracking-wider">
+                          Historical Evaluations ({chronologicalHistory.length} Recorded)
+                        </div>
+                        <h3 className="font-heading text-lg font-bold text-slate-900 mt-0.5">
+                          Risk Score Trajectory Over Time
+                        </h3>
+                      </div>
+
+                      <div className="flex items-center gap-4 text-xs font-bold">
+                        <span className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Diabetes Risk
+                        </span>
+                        <span className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-200">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span> Heart Risk
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="h-72 w-full pt-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chronologicalHistory} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                          <XAxis dataKey="dateStr" stroke="#94A3B8" fontSize={12} />
+                          <YAxis stroke="#94A3B8" fontSize={12} domain={[0, 100]} unit="%" />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#0F172A', color: '#fff', borderRadius: '12px', fontSize: '12px' }}
+                            formatter={(val, name) => [`${val}%`, name === 'diabetesRisk' ? 'Diabetes Risk' : 'Heart Risk']}
+                          />
+                          <Line type="monotone" dataKey="diabetesRisk" stroke="#F59E0B" strokeWidth={3} dot={{ r: 6 }} name="Diabetes Risk" />
+                          <Line type="monotone" dataKey="heartRisk" stroke="#EF4444" strokeWidth={3} dot={{ r: 6 }} name="Heart Risk" />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-1">
+                      <div className="font-bold text-slate-800">Trajectory Summary:</div>
+                      <p>
+                        Baseline Evaluation (Initial): Diabetes Risk {chronologicalHistory[0].diabetesRisk}%, Heart Risk {chronologicalHistory[0].heartRisk}%.
+                        Latest Evaluation ({chronologicalHistory[chronologicalHistory.length - 1].dateStr}): Diabetes Risk {chronologicalHistory[chronologicalHistory.length - 1].diabetesRisk}%, Heart Risk {chronologicalHistory[chronologicalHistory.length - 1].heartRisk}%.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* IF fewer than 2 predictions exist: render friendly empty state encouraging re-check */
+                  <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 shadow-sm max-w-2xl mx-auto space-y-5">
+                    <div className="w-16 h-16 rounded-3xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center mx-auto">
+                      <TrendingUp className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-xl font-bold text-slate-900">Longitudinal Trend Trajectory Requires 2+ Assessments</h3>
+                      <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
+                        You currently have 1 health evaluation recorded in your profile. Take periodic assessments (e.g. monthly or after adopting new diet &amp; exercise habits) to unlock multi-point risk trajectory trend lines over time.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => navigate('/assessment')}
+                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-teal-400" />
+                      <span>Take New Assessment</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: SHAP EXPLAINABILITY */}
             {activeTab === 'shap' && (
               <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
                 <div>
@@ -592,7 +698,7 @@ export const DashboardPage = () => {
               </div>
             )}
 
-            {/* TAB 3: PERSONALIZED CHECKLIST RECOMMENDATIONS */}
+            {/* TAB 4: PERSONALIZED CHECKLIST RECOMMENDATIONS */}
             {activeTab === 'recommendations' && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -715,7 +821,7 @@ export const DashboardPage = () => {
                         <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">
                           😴
                         </div>
-                        <h3 className="font-heading font-bold text-base text-slate-900">Sleep & Recovery Guidance</h3>
+                        <h3 className="font-heading font-bold text-base text-slate-900">Sleep &amp; Recovery Guidance</h3>
                       </div>
                       <p className="text-xs text-slate-700 leading-relaxed p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
                         {recommendations.sleep}
@@ -732,7 +838,7 @@ export const DashboardPage = () => {
               </div>
             )}
 
-            {/* TAB 4: CHATBOT */}
+            {/* TAB 5: CHATBOT */}
             {activeTab === 'chat' && (
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
                 <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
@@ -840,53 +946,170 @@ export const DashboardPage = () => {
               </div>
             )}
 
-            {/* TAB 5: SPECIALISTS */}
+            {/* TAB 6: HOSPITALS & SPECIALISTS FINDER */}
             {activeTab === 'specialists' && (
               <div className="space-y-6">
-                <div>
-                  <h2 className="font-heading text-2xl font-bold text-slate-900">Nearby Healthcare Specialists</h2>
-                  <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                    Discover qualified local medical providers based on your elevated risk factors.
-                  </p>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-heading text-2xl font-bold text-slate-900">Nearby Hospitals &amp; Specialists</h2>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                      Calls Google Places API to find nearby hospitals and condition-mapped specialists (Endocrinologists for Diabetes, Cardiologists for Heart Disease).
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={requestGeolocation}
+                    disabled={loadingHospitals}
+                    className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <Navigation className="w-4 h-4" />
+                    <span>Use My Geolocation</span>
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {specialists.map((doc, idx) => (
-                    <div key={idx} className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
-                      <div className="space-y-3">
-                        <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center font-bold">
-                          <UserIcon className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3 className="font-heading font-extrabold text-base text-slate-900">{doc.name}</h3>
-                          <span className="text-xs text-teal-700 font-bold block">{doc.specialty}</span>
-                          <span className="text-xs text-slate-400 block mt-0.5">{doc.hospital}</span>
+                {/* Geolocation Denial / Error Banner & Manual Location Fallback Input */}
+                {geoError && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs flex items-start gap-3">
+                    <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Geolocation Fallback:</span>
+                      <span>{geoError}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Search Bar & Condition Filters */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <input
+                        type="text"
+                        value={locationInput}
+                        onChange={(e) => setLocationInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && fetchHospitals(userLat, userLng, locationInput)}
+                        placeholder="Search manual city or ZIP code (e.g. San Francisco, CA)..."
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fetchHospitals(userLat, userLng, locationInput)}
+                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Search Facilities
+                    </button>
+                  </div>
+
+                  {/* Condition Filter Controls */}
+                  <div className="flex items-center gap-2 overflow-x-auto pt-1 border-t border-slate-100">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider shrink-0 mr-1">
+                      Specialist Filter:
+                    </span>
+                    {[
+                      { id: 'auto', label: '⚡ Auto-Inferred from Risk' },
+                      { id: 'diabetes', label: '🩺 Endocrinologists (Diabetes)' },
+                      { id: 'heart', label: '❤️ Cardiologists (Heart)' },
+                      { id: 'both', label: '🏥 Both Specialists' },
+                      { id: 'general', label: '🏥 General Hospitals' },
+                    ].map((f) => {
+                      const isActive = conditionFilter === f.id;
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => {
+                            setConditionFilter(f.id);
+                            fetchHospitals(userLat, userLng, locationInput, f.id);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
+                            isActive
+                              ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Hospitals & Specialists Results List */}
+                {loadingHospitals ? (
+                  <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 shadow-sm animate-pulse space-y-2">
+                    <Compass className="w-8 h-8 text-teal-600 mx-auto animate-spin" />
+                    <p className="text-xs font-bold text-slate-600">Querying nearby hospitals &amp; condition specialists...</p>
+                  </div>
+                ) : hospitalsList.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {hospitalsList.map((doc) => (
+                      <div key={doc.id} className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between hover:border-teal-300 transition-all">
+                        <div className="space-y-3">
+                          <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center font-bold">
+                            <Stethoscope className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-heading font-extrabold text-base text-slate-900">{doc.name}</h3>
+                            <span className="text-xs text-teal-700 font-bold block">{doc.specialty}</span>
+                            <span className="text-xs text-slate-500 block mt-1">{doc.address}</span>
+                          </div>
+
+                          <div className="pt-2 text-xs text-slate-600 space-y-1.5 border-t border-slate-100">
+                            <div className="flex items-center justify-between">
+                              <span className="flex items-center gap-1.5 text-slate-500">
+                                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{doc.distance}</span>
+                              </span>
+                              <span className="font-bold text-amber-600">
+                                ★ {doc.rating} ({doc.user_ratings_total})
+                              </span>
+                            </div>
+
+                            {doc.phone && (
+                              <div className="flex items-center gap-1.5 text-slate-600">
+                                <Phone className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{doc.phone}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="pt-2 text-xs text-slate-600 space-y-1">
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{doc.distance}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 font-bold text-amber-600">
-                            <span>{doc.rating}</span>
-                          </div>
+                        <div className="mt-6 pt-4 border-t border-slate-100 flex gap-2">
+                          {doc.google_maps_url && (
+                            <a
+                              href={doc.google_maps_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <span>Directions</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+
+                          {doc.phone && (
+                            <a
+                              href={`tel:${doc.phone}`}
+                              className="px-3 py-2.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-xl text-xs font-bold transition-colors inline-flex items-center justify-center cursor-pointer"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </a>
+                          )}
                         </div>
                       </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-12 text-center bg-white rounded-3xl border border-slate-200">
+                    <p className="text-xs font-bold text-slate-500">No nearby specialists found matching your search. Try changing location or condition filter.</p>
+                  </div>
+                )}
 
-                      <button
-                        onClick={() => alert(`Appointment request sent for ${doc.name}. A clinic representative will contact you.`)}
-                        className="mt-6 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                      >
-                        Request Consultation
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-xs flex items-center gap-2">
-                  <Info className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>riskLens provides specialist recommendations for convenience. We do not receive referral fees or endorse specific providers.</span>
+                <div className="p-4 bg-slate-100 border border-slate-200 rounded-2xl text-slate-600 text-xs flex items-center gap-2">
+                  <Info className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span>RiskLens provides nearby facility information for user convenience only. We do not receive referral fees or endorse specific healthcare providers.</span>
                 </div>
               </div>
             )}

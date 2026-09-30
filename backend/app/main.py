@@ -10,6 +10,7 @@ from app.features.health.routers import router as health_router
 from app.features.auth.routers import router as auth_router
 from app.features.predictions.routers import router as predictions_router
 from app.features.llm.routers import router as llm_router
+from app.features.hospitals.routers import router as hospitals_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,7 +53,9 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(predictions_router)
 app.include_router(llm_router)
+app.include_router(hospitals_router)
 app.include_router(health_router)
+
 
 
 @app.get("/", tags=["Root"])

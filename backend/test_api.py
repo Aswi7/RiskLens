@@ -86,6 +86,17 @@ def run_tests():
         assert "lifestyle" in hs_data["breakdown"]
         assert "fitness" in hs_data["breakdown"]
 
+        # 4.8. GET /hospitals/nearby (Condition-filtered specialists)
+        res = client.get("/hospitals/nearby?lat=37.7749&lng=-122.4194&condition=diabetes", headers=headers)
+        print(f"\n4.8. GET /hospitals/nearby -> Status {res.status_code}:", res.json())
+        assert res.status_code == 200
+        hosp_data = res.json()
+        assert "hospitals" in hosp_data
+        assert len(hosp_data["hospitals"]) > 0
+        assert "name" in hosp_data["hospitals"][0]
+        assert "specialty" in hosp_data["hospitals"][0]
+        assert "distance" in hosp_data["hospitals"][0]
+
         # 5. POST /recommendations (Structured JSON: diet, exercise, sleep, urgency, disclaimer)
         res = client.post("/recommendations", json={}, headers=headers)
         print(f"\n5. POST /recommendations -> Status {res.status_code}:")

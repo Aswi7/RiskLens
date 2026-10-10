@@ -705,10 +705,11 @@ export const AssessmentPage = () => {
                 ].map((item) => {
                   const isChecked = formData.medicalHistory.includes(item.id);
                   return (
-                    <label
+                    <button
+                      type="button"
                       key={item.id}
                       onClick={() => toggleMedicalHistory(item.id)}
-                      className={`flex items-start p-4 rounded-xl border transition-all cursor-pointer ${
+                      className={`flex items-start p-4 rounded-xl border transition-all cursor-pointer text-left ${
                         isChecked
                           ? 'border-teal-500 bg-teal-50/50 text-slate-900 font-semibold shadow-xs'
                           : 'border-slate-200 hover:bg-slate-50 text-slate-700'
@@ -717,14 +718,14 @@ export const AssessmentPage = () => {
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => {}}
-                        className="mt-1 w-4 h-4 text-teal-600 rounded-md focus:ring-teal-500"
+                        readOnly
+                        className="mt-1 w-4 h-4 text-teal-600 rounded-md focus:ring-teal-500 pointer-events-none"
                       />
                       <div className="ml-3">
                         <span className="text-sm block font-bold">{item.label}</span>
                         <span className="text-xs text-slate-500 block mt-0.5">{item.desc}</span>
                       </div>
-                    </label>
+                    </button>
                   );
                 })}
               </div>
@@ -759,7 +760,8 @@ export const AssessmentPage = () => {
                       {conditionsList.map((cond) => {
                         const isChecked = selectedForRel.includes(cond);
                         return (
-                          <label
+                          <button
+                            type="button"
                             key={cond}
                             onClick={() => toggleFamilyCondition(relKey, cond)}
                             className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
@@ -768,15 +770,9 @@ export const AssessmentPage = () => {
                                 : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
                             }`}
                           >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}}
-                              className="hidden"
-                            />
                             <span>{isChecked ? '✓' : '+'}</span>
                             <span>{cond}</span>
-                          </label>
+                          </button>
                         );
                       })}
                     </div>

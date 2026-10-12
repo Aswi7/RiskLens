@@ -1,6 +1,5 @@
 {
   "model_type": "LogisticRegression",
-  "model_selection_reasoning": "XGBoost and Logistic Regression were both trained and compared via 5-fold cross-validation. Logistic Regression achieved a comparable-to-slightly-better mean ROC-AUC (0.8520 vs 0.8359), consistent with simpler models often generalizing better on small datasets (303 rows). Logistic Regression was selected as the final model based on this evidence, not by default.",
   "requires_scaling": true,
   "scaler_file": "heart_scaler.joblib",
   "features_original": [
@@ -25,17 +24,27 @@
     "cp_3"
   ],
   "categorical_encoding": {
-    "cp": "one-hot encoded into cp_0, cp_1, cp_2, cp_3 (unordered categories, not ordinal)"
+    "cp": "one-hot into cp_0..cp_3"
   },
-  "target": "target",
-  "scale_pos_weight_note": "Class balance was 54.5%/45.5% (near-balanced), unlike the Diabetes dataset's 86%/14% split. scale_pos_weight was computed (0.833) but had minimal effect given how close to balanced the classes already were.",
+  "decision_threshold": 0.4,
+  "threshold_note": "Tuned on 5-fold out-of-fold predictions (303 rows). At 0.4: precision 0.715, recall 0.819, 25 of 138 cases missed. Chosen to prioritise recall for screening, consistent with the diabetes model.",
+  "target_note": "Source dataset target is inverted (1 = no disease). Flipped so 1 = heart disease before training.",
+  "class_balance_note": "Disease class share in train: 0.455; scale_pos_weight (XGBoost comparison) = 1.200",
+  "model_selection_reasoning": "Logistic Regression and XGBoost compared via 5-fold CV. Logistic Regression had the higher mean ROC-AUC (0.8542 vs 0.8339), consistent with simpler models generalising better on small datasets (303 rows).",
   "metrics": {
-    "test_split_roc_auc": 0.8149,
-    "cv_roc_auc_mean": 0.852,
-    "cv_roc_auc_std": 0.0298
+    "test_roc_auc": 0.8528,
+    "cv_roc_auc_mean": 0.8542,
+    "cv_roc_auc_std": 0.0305,
+    "xgboost_cv_roc_auc_mean": 0.8339,
+    "cv_precision_at_threshold": 0.7152,
+    "cv_recall_at_threshold": 0.8188
   },
-  "dataset": "UCI Heart Disease (Cleveland)",
-  "dataset_notes": "Only 303 rows - substantially smaller than the Diabetes model's 253,680 rows. Cross-validation showed much higher variance (std 0.0298 vs 0.0027 for Diabetes), reflecting this scale asymmetry. Predictions from this model should be treated with more caution / framed as a more preliminary screening signal.",
+  "imputation_medians": {
+    "trestbps": 130,
+    "chol": 240,
+    "fbs": 0
+  },
+  "dataset": "UCI Heart Disease (Cleveland), 303 rows",
   "excluded_features": [
     "restecg",
     "thalach",
@@ -43,6 +52,5 @@
     "slope",
     "ca",
     "thal"
-  ],
-  "exclusion_reason": "These fields require clinical testing (ECG, stress test) that the app's users will not have access to without a lab visit."
+  ]
 }

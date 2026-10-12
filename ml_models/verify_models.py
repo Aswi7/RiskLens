@@ -24,7 +24,12 @@ for fname in sorted(files):
             print(f"  - Model Type: {data.get('model_type', 'N/A')}")
             features = data.get('features') or data.get('features_encoded', [])
             print(f"  - Feature Count: {len(features)}")
-            print(f"  - Target: {data.get('target', 'N/A')}")
+            target = data.get('target') or data.get('target_note', 'N/A')
+            print(f"  - Target: {target}")
+            if 'decision_threshold' in data:
+                print(f"  - Decision Threshold: {data['decision_threshold']}")
+            if 'imputation_medians' in data:
+                print(f"  - Imputation Medians: {data['imputation_medians']}")
             results.append((fname, 'PASS', f"JSON loaded successfully ({len(features)} features)"))
         except Exception as e:
             print(f"  [FAIL] JSON error: {e}")
@@ -50,14 +55,22 @@ for fname in sorted(files):
 
             # Perform a test prediction or transform if applicable
             if hasattr(obj, 'predict') and hasattr(obj, 'n_features_in_'):
-                dummy_input = np.zeros((1, obj.n_features_in_))
+                if hasattr(obj, 'feature_names_in_'):
+                    import pandas as pd
+                    dummy_input = pd.DataFrame(np.zeros((1, obj.n_features_in_)), columns=list(obj.feature_names_in_))
+                else:
+                    dummy_input = np.zeros((1, obj.n_features_in_))
                 pred = obj.predict(dummy_input)
                 print(f"  - Sanity check predict(zeros): {pred}")
                 if hasattr(obj, 'predict_proba'):
                     proba = obj.predict_proba(dummy_input)
                     print(f"  - Sanity check predict_proba(zeros): probabilities {proba[0]}")
             elif hasattr(obj, 'transform') and hasattr(obj, 'mean_'):
-                dummy_input = np.zeros((1, len(obj.mean_)))
+                if hasattr(obj, 'feature_names_in_'):
+                    import pandas as pd
+                    dummy_input = pd.DataFrame(np.zeros((1, len(obj.mean_))), columns=list(obj.feature_names_in_))
+                else:
+                    dummy_input = np.zeros((1, len(obj.mean_)))
                 scaled = obj.transform(dummy_input)
                 print(f"  - Sanity check transform(zeros): output shape {scaled.shape}")
 

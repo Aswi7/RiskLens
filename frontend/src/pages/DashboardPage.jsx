@@ -490,7 +490,9 @@ export const DashboardPage = () => {
 
                     <div className="flex items-baseline gap-2 mb-4">
                       <span className="text-4xl font-extrabold text-slate-900">{diabetesRiskPct}%</span>
-                      <span className="text-xs font-semibold text-slate-500">Decision Cutoff Threshold: 40.0%</span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        Decision Cutoff Threshold: {((predictionData.diabetes?.risk?.threshold ?? 0.4) * 100).toFixed(1)}%
+                      </span>
                     </div>
 
                     <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden mb-6">
@@ -533,7 +535,9 @@ export const DashboardPage = () => {
 
                     <div className="flex items-baseline gap-2 mb-4">
                       <span className="text-4xl font-extrabold text-slate-900">{heartRiskPct}%</span>
-                      <span className="text-xs font-semibold text-slate-500">Decision Cutoff Threshold: 50.0%</span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        Decision Cutoff Threshold: {((predictionData.heartDisease?.risk?.threshold ?? 0.4) * 100).toFixed(1)}%
+                      </span>
                     </div>
 
                     <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden mb-6">

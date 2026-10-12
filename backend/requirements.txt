@@ -8,3 +8,10 @@ python-dotenv>=1.0.1
 python-multipart>=0.0.9
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+scikit-learn==1.6.1
+xgboost==2.1.4
+joblib==1.6.0
+numpy==2.5.3
+pandas>=2.2.0
+shap>=0.44.0
+

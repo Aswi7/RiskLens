@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from typing import Dict, Any, Tuple, List
 from app.ml.loader import ml_loader
 
@@ -135,17 +136,22 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
     Independent processing pipeline for Heart Disease Risk Prediction (Logistic Regression).
     - One-hot encodes 'cp' into cp_0, cp_1, cp_2, cp_3.
     - MANDATORY scaling using heart_scaler.joblib.
-    - Decision threshold = 0.5.
+    - Custom decision threshold from heart_meta.json (default 0.4).
+    - Imputation medians for missing clinical measurements (trestbps, chol, fbs) from heart_meta.json.
     - SHAP LinearExplainer.
     """
     raw_required = ml_loader.heart_meta.get("features_original", ["age", "sex", "cp", "trestbps", "chol", "fbs", "exang"])
+    imputation_medians = ml_loader.heart_meta.get("imputation_medians", {})
     missing_fields = []
     raw_dict = {}
 
     for feat in raw_required:
         val = extract_field_value(payload, feat)
         if val is None:
-            missing_fields.append(feat)
+            if feat in imputation_medians:
+                raw_dict[feat] = float(imputation_medians[feat])
+            else:
+                missing_fields.append(feat)
         else:
             raw_dict[feat] = float(val)
 
@@ -184,12 +190,13 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     input_encoded = np.array([[encoded_map[feat] for feat in encoded_features]], dtype=np.float32)
 
-    # MANDATORY Scaling via heart_scaler.joblib
-    input_scaled = ml_loader.heart_scaler.transform(input_encoded)
+    # MANDATORY Scaling via heart_scaler.joblib with aligned feature names
+    input_encoded_df = pd.DataFrame(input_encoded, columns=encoded_features)
+    input_scaled = ml_loader.heart_scaler.transform(input_encoded_df)
 
     # Inference with Logistic Regression
     proba = float(ml_loader.heart_model.predict_proba(input_scaled)[0][1])
-    threshold = 0.5
+    threshold = float(ml_loader.heart_meta.get("decision_threshold", 0.4))
     is_high_risk = proba >= threshold
     risk_level = "High Risk" if is_high_risk else "Low Risk"
 

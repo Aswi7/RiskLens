@@ -4,7 +4,7 @@ import { Activity, ArrowRight, ShieldCheck, Mail, Lock, Sparkles } from 'lucide-
 import { useAuth } from '../context/AuthContext';
 
 export const LoginPage = () => {
-  const { login } = useAuth();
+  const { login, demoLogin } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect') || '/dashboard';
@@ -25,8 +25,8 @@ export const LoginPage = () => {
     try {
       await login(email, password);
       navigate(redirect);
-    } catch {
-      setError('Failed to sign in. Please check your credentials.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to sign in. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -34,9 +34,17 @@ export const LoginPage = () => {
 
   const handleDemoLogin = async () => {
     setLoading(true);
-    await login('alex.morgan@health.ai', 'demo1234');
-    navigate(redirect);
+    setError('');
+    try {
+      await demoLogin();
+      navigate(redirect);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to initialize demo session.');
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">

@@ -201,5 +201,5 @@ async def fetch_nearby_hospitals(
         return results
 
     except Exception as e:
-        logger.warning(f"Google Places API call failed ({e}). Serving fallback local providers.")
+        logger.warning(f"Google Places API call failed ({type(e).__name__}). Serving fallback local providers.")
         return get_mock_hospitals(lat, lng, cond_lower)

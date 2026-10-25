@@ -1,5 +1,6 @@
+import asyncio
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Dict, Any
 from app.db.mongodb import get_database
 from app.features.auth.dependencies import get_current_user
@@ -34,8 +35,9 @@ async def predict_risk(
     health_score_dict = compute_health_score(full_dict)
     full_dict["health_score"] = health_score_dict
 
-    # Run ML prediction pipeline (passing full_dict, ML models use their specific features)
-    results = process_prediction(full_dict)
+    # Run ML prediction & SHAP pipeline in worker thread to prevent event loop blocking
+    results = await asyncio.to_thread(process_prediction, full_dict)
+
 
     # Persist main record in MongoDB predictions collection
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -108,13 +110,15 @@ async def get_health_score(
 
 @router.get("/history", response_model=List[PredictionRecord])
 async def get_prediction_history(
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of historical records to return"),
+    skip: int = Query(0, ge=0, description="Number of historical records to skip"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
-    Retrieves all historical predictions for the authenticated user, sorted by timestamp descending.
+    Retrieves historical predictions for the authenticated user, sorted by timestamp descending, with pagination.
     """
     db = get_database()
-    cursor = db.predictions.find({"user_id": current_user["id"]}).sort("timestamp", -1)
+    cursor = db.predictions.find({"user_id": current_user["id"]}).sort("timestamp", -1).skip(skip).limit(limit)
 
     records = []
     async for doc in cursor:

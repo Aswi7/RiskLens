@@ -57,6 +57,47 @@ app.include_router(hospitals_router)
 app.include_router(health_router)
 
 
+import math
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    errors = []
+    for err in exc.errors():
+        clean_err = dict(err)
+        inp = clean_err.get("input")
+        if isinstance(inp, float) and (math.isnan(inp) or math.isinf(inp)):
+            clean_err["input"] = str(inp)
+        # Handle tuple or dict input that might contain nan/inf
+        errors.append(clean_err)
+    return JSONResponse(status_code=422, content={"detail": errors})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None)
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc: Exception):
+    logger.error(f"Unhandled server error: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An internal server error occurred. Please try again later.",
+            "error_type": "InternalServerError"
+        }
+    )
+
+
+
+
 
 @app.get("/", tags=["Root"])
 async def root():

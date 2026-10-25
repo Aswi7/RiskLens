@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 
 
 class RecommendationRequest(BaseModel):
@@ -21,13 +21,13 @@ class RecommendationResponse(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str = Field(..., description="'user' or 'assistant'")
-    content: str = Field(..., description="Message text content")
+    role: Literal["user", "assistant"] = Field(..., description="'user' or 'assistant'")
+    content: str = Field(..., max_length=1500, description="Message text content")
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, description="User follow-up question")
-    history: Optional[List[ChatMessage]] = Field(default=[], description="Past conversation history")
+    message: str = Field(..., min_length=1, max_length=1500, description="User follow-up question")
+    history: Optional[List[ChatMessage]] = Field(default=[], max_length=20, description="Past conversation history")
     context: Optional[Dict[str, Any]] = Field(None, description="Risk prediction & SHAP context")
 
 

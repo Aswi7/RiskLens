@@ -1,10 +1,15 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status, Request
+from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, status, Request, Depends
 from app.db.mongodb import get_database
 from app.core.security import hash_password, verify_password, create_access_token
 from app.features.auth.schemas import UserRegister, Token, UserOut
+from app.features.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+from pymongo.errors import DuplicateKeyError
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -15,7 +20,7 @@ async def register(user_in: UserRegister):
     existing_user = await db.users.find_one({"email": user_in.email.lower()})
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="User with this email already exists"
         )
 
@@ -29,7 +34,14 @@ async def register(user_in: UserRegister):
         "created_at": created_at
     }
 
-    result = await db.users.insert_one(user_doc)
+    try:
+        result = await db.users.insert_one(user_doc)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User with this email already exists"
+        )
+
     user_id = str(result.inserted_id)
 
     return UserOut(
@@ -38,6 +50,7 @@ async def register(user_in: UserRegister):
         full_name=user_in.full_name,
         created_at=created_at
     )
+
 
 
 @router.post("/login", response_model=Token)
@@ -84,3 +97,42 @@ async def login(request: Request):
     access_token = create_access_token(data={"sub": user_id, "email": user["email"]})
 
     return Token(access_token=access_token, token_type="bearer")
+
+
+@router.get("/me", response_model=UserOut)
+async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Retrieves the profile of the currently authenticated user."""
+    return UserOut(
+        id=current_user["id"],
+        email=current_user["email"],
+        full_name=current_user.get("full_name"),
+        created_at=current_user.get("created_at") or datetime.now(timezone.utc).isoformat()
+    )
+
+
+@router.post("/demo-login", response_model=Token)
+async def demo_login():
+    """
+    Explicit guest/demo login route.
+    Issues a real signed JWT token for the isolated demo user.
+    """
+    db = get_database()
+    demo_email = "demo@risklens.com"
+    demo_user = await db.users.find_one({"email": demo_email})
+    if not demo_user:
+        hashed = hash_password("DemoPassword123!")
+        doc = {
+            "email": demo_email,
+            "password": hashed,
+            "full_name": "Demo Guest User",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "is_demo": True
+        }
+        res = await db.users.insert_one(doc)
+        user_id = str(res.inserted_id)
+    else:
+        user_id = str(demo_user["_id"])
+
+    access_token = create_access_token(data={"sub": user_id, "email": demo_email})
+    return Token(access_token=access_token, token_type="bearer")
+

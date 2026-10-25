@@ -9,10 +9,10 @@ router = APIRouter(tags=["Hospitals & Specialists"])
 
 @router.get("/hospitals/nearby", response_model=HospitalSearchResponse)
 async def get_nearby_hospitals(
-    lat: Optional[float] = Query(None, description="User latitude"),
-    lng: Optional[float] = Query(None, description="User longitude"),
-    location: Optional[str] = Query(None, description="Optional manual location input (city or zip code)"),
-    condition: Optional[str] = Query(None, description="'diabetes', 'heart', 'both', or 'general'"),
+    lat: Optional[float] = Query(None, ge=-90.0, le=90.0, description="User latitude in degrees (-90 to 90)"),
+    lng: Optional[float] = Query(None, ge=-180.0, le=180.0, description="User longitude in degrees (-180 to 180)"),
+    location: Optional[str] = Query(None, max_length=200, description="Optional manual location input (city or zip code)"),
+    condition: Optional[str] = Query(None, max_length=50, description="'diabetes', 'heart', 'both', or 'general'"),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """

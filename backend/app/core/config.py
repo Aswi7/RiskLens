@@ -1,5 +1,6 @@
 from typing import List
 from pathlib import Path
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +37,16 @@ class Settings(BaseSettings):
 
     # ML Models Directory
     MODEL_DIR: str = ""
+
+    @model_validator(mode="after")
+    def validate_jwt_secret_in_production(self):
+        default_secret = "risklens_super_secret_jwt_key_2026_change_in_production"
+        if not self.DEBUG:
+            if self.JWT_SECRET == default_secret or len(self.JWT_SECRET.strip()) < 32:
+                raise ValueError(
+                    "Security Enforcement: A non-default JWT_SECRET of at least 32 characters is required when DEBUG is off (production mode)."
+                )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

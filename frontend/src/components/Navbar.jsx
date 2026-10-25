@@ -115,7 +115,10 @@ export const Navbar = () => {
                   <span>Dashboard</span>
                 </Link>
                 <button
-                  onClick={logout}
+                  onClick={() => {
+                    logout();
+                    navigate('/');
+                  }}
                   title="Sign out"
                   className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
                 >

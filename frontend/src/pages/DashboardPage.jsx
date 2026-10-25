@@ -300,7 +300,10 @@ export const DashboardPage = () => {
               </div>
               <span className="hidden sm:inline text-xs font-bold text-slate-800">{user?.name || user?.email || 'User'}</span>
               <button
-                onClick={logout}
+                onClick={() => {
+                  logout();
+                  navigate('/login');
+                }}
                 className="text-xs text-slate-400 hover:text-slate-600 font-semibold cursor-pointer"
               >
                 Log Out

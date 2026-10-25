@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import numpy as np
 from typing import List, Dict, Any, Optional
@@ -44,7 +45,8 @@ async def retrieve_medical_knowledge(
         return []
 
     embedder = get_embedder()
-    query_vector = embedder.encode(user_message).tolist()
+    query_vector = await asyncio.to_thread(lambda: embedder.encode(user_message).tolist())
+
 
     db = get_database()
     collection = db["medicalKnowledge"]

@@ -36,8 +36,8 @@ export const RegisterPage = () => {
     try {
       await register(name, email, password);
       navigate(redirect);
-    } catch {
-      setError('Failed to create account. Please try again.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }

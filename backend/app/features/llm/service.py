@@ -64,6 +64,16 @@ EMERGENCY_PATTERNS = [
 ]
 
 
+def sanitize_log_message(msg: str) -> str:
+    """Masks API keys matching common patterns (AIza..., sk-...) from log strings."""
+    if not msg:
+        return ""
+    s = re.sub(r'AIza[0-9A-Za-z-_]{35}', '[REDACTED_API_KEY]', str(msg))
+    s = re.sub(r'sk-[0-9A-Za-z-_]{20,}', '[REDACTED_API_KEY]', s)
+    s = re.sub(r'key=[^&\s"\']+', 'key=[REDACTED_KEY]', s)
+    return s
+
+
 def check_pre_llm_safety_filters(user_message: str) -> Tuple[bool, Optional[str], bool]:
     """
     Pre-LLM Safety Pattern & Keyword Filter.
@@ -181,7 +191,8 @@ def call_llm_json(prompt: str, system_prompt: str) -> Optional[Dict[str, Any]]:
 
     # 1. Gemini API Call via REST
     if gemini_key:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        headers = {"x-goog-api-key": gemini_key}
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -190,13 +201,13 @@ def call_llm_json(prompt: str, system_prompt: str) -> Optional[Dict[str, Any]]:
         for attempt in range(2):
             try:
                 with httpx.Client(timeout=20.0) as client:
-                    resp = client.post(url, json=payload)
+                    resp = client.post(url, json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
                     raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
                     return json.loads(raw_text)
             except Exception as e:
-                logger.warning(f"Gemini API attempt {attempt+1} failed: {e}")
+                logger.warning(sanitize_log_message(f"Gemini API attempt {attempt+1} failed: {type(e).__name__}"))
                 if attempt == 0:
                     payload["contents"].append({"parts": [{"text": "Your previous response was invalid JSON. Respond ONLY with valid JSON matching the specified schema."}]})
 
@@ -382,19 +393,21 @@ def generate_chat_reply(
     # 1. Gemini LLM Call
     if gemini_key:
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+            headers = {"x-goog-api-key": gemini_key}
             payload = {
                 "contents": [{"parts": [{"text": full_prompt}]}],
                 "system_instruction": {"parts": [{"text": CHAT_SYSTEM_PROMPT}]}
             }
             with httpx.Client(timeout=15.0) as client:
-                resp = client.post(url, json=payload)
+                resp = client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
                 reply_text = data["candidates"][0]["content"]["parts"][0]["text"]
                 return ChatResponse(reply=reply_text, isEmergency=False, skippedLLM=False, citations=citations)
         except Exception as e:
-            logger.warning(f"Gemini Chat API call failed ({e}). Using fallback.")
+            logger.warning(sanitize_log_message(f"Gemini Chat API call failed ({type(e).__name__}). Using fallback."))
+
 
     # 2. OpenAI LLM Call
     elif openai_key and OpenAI:

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import api from '../services/api';
 
 const AuthContext = createContext(undefined);
 
@@ -7,41 +8,71 @@ export const AuthProvider = ({ children }) => {
     const saved = localStorage.getItem('risklens_user');
     return saved ? JSON.parse(saved) : null;
   });
+  const [loading, setLoading] = useState(true);
 
+  // Sync user state with localStorage and verify token on initial load
   useEffect(() => {
-    if (user) {
-      localStorage.setItem('risklens_user', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('risklens_user');
-    }
-  }, [user]);
-
-  const login = async (email, _password) => {
-    // Simulate auth API call
-    await new Promise((res) => setTimeout(res, 500));
-    const mockUser = {
-      id: 'usr_' + Date.now(),
-      name: email.split('@')[0].replace('.', ' ').replace(/^./, (c) => c.toUpperCase()),
-      email,
+    const initAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const res = await api.get('/auth/me');
+          setUser(res.data);
+          localStorage.setItem('risklens_user', JSON.stringify(res.data));
+        } catch {
+          // Token is expired or invalid
+          localStorage.removeItem('token');
+          localStorage.removeItem('risklens_user');
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+        localStorage.removeItem('risklens_user');
+      }
+      setLoading(false);
     };
-    setUser(mockUser);
+
+    initAuth();
+  }, []);
+
+  const login = async (email, password) => {
+    const res = await api.post('/auth/login', { email, password });
+    const token = res.data.access_token;
+    localStorage.setItem('token', token);
+
+    const meRes = await api.get('/auth/me');
+    const userData = meRes.data;
+    setUser(userData);
+    localStorage.setItem('risklens_user', JSON.stringify(userData));
     return true;
   };
 
-  const register = async (name, email, _password) => {
-    // Simulate register API call
-    await new Promise((res) => setTimeout(res, 600));
-    const mockUser = {
-      id: 'usr_' + Date.now(),
-      name,
+  const register = async (name, email, password) => {
+    await api.post('/auth/register', {
+      full_name: name,
       email,
-    };
-    setUser(mockUser);
+      password
+    });
+    return await login(email, password);
+  };
+
+  const demoLogin = async () => {
+    const res = await api.post('/auth/demo-login');
+    const token = res.data.access_token;
+    localStorage.setItem('token', token);
+
+    const meRes = await api.get('/auth/me');
+    const userData = meRes.data;
+    setUser(userData);
+    localStorage.setItem('risklens_user', JSON.stringify(userData));
     return true;
   };
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('risklens_user');
+    localStorage.removeItem('risklens_latest_prediction');
   };
 
   return (
@@ -49,8 +80,10 @@ export const AuthProvider = ({ children }) => {
       value={{
         user,
         isAuthenticated: !!user,
+        loading,
         login,
         register,
+        demoLogin,
         logout,
       }}
     >

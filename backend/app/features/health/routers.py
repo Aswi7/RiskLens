@@ -1,8 +1,10 @@
+import logging
 from fastapi import APIRouter, Depends, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.db.mongodb import get_database
 from app.features.health.schemas import HealthStatusResponse
 
+logger = logging.getLogger("risklens.health")
 router = APIRouter()
 
 @router.get(
@@ -15,7 +17,7 @@ async def check_health(db: AsyncIOMotorDatabase = Depends(get_database)):
     """Health check endpoint. Verifies connectivity to MongoDB and validates via Pydantic v2."""
     mongodb_status = "disconnected"
     overall_status = "unhealthy"
-    message = "MongoDB client is not initialized."
+    message = "Database service unavailable."
 
     if db is not None:
         try:
@@ -25,7 +27,8 @@ async def check_health(db: AsyncIOMotorDatabase = Depends(get_database)):
             overall_status = "healthy"
             message = "All services are functioning normally."
         except Exception as e:
-            message = f"Failed to connect to MongoDB: {str(e)}"
+            logger.error(f"MongoDB ping failed during health check: {e}")
+            message = "Database service unavailable."
     
     return HealthStatusResponse(
         status=overall_status,

@@ -21,6 +21,7 @@ api.interceptors.request.use(
   (error) => {
     return Promise.reject(error)
   }
+)
 // Response interceptor to handle 401 Unauthorized globally
 api.interceptors.response.use(
   (response) => response,

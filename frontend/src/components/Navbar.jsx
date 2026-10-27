@@ -109,9 +109,17 @@ export const Navbar = () => {
                   to="/dashboard"
                   className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-teal-600 px-3 py-2 rounded-lg transition-colors"
                 >
-                  <div className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-xs">
-                    {user?.name?.charAt(0) || 'U'}
-                  </div>
+                  {user?.avatar_url ? (
+                    <img
+                      src={user.avatar_url}
+                      alt={user.full_name || 'User profile'}
+                      className="w-7 h-7 rounded-full object-cover border border-slate-200"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-xs">
+                      {(user?.full_name || user?.name || user?.email || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <span>Dashboard</span>
                 </Link>
                 <button

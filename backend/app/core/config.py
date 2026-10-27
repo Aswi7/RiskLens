@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     GOOGLE_PLACES_API_KEY: str = ""
+    GOOGLE_CLIENT_ID: str = ""
 
     # ML Models Directory
     MODEL_DIR: str = ""

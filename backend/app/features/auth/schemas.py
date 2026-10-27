@@ -19,8 +19,18 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class GoogleAuthRequest(BaseModel):
+    credential: Optional[str] = None
+    access_token: Optional[str] = None
+    is_demo: Optional[bool] = False
+    demo_email: Optional[EmailStr] = None
+    demo_name: Optional[str] = None
+
+
 class UserOut(BaseModel):
     id: str
     email: EmailStr
     full_name: Optional[str] = None
     created_at: str
+    avatar_url: Optional[str] = None
+    auth_provider: Optional[str] = "local"

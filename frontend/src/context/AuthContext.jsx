@@ -68,6 +68,37 @@ export const AuthProvider = ({ children }) => {
     return true;
   };
 
+  const googleLogin = async (tokenOrCredential, demoData = null) => {
+    let payload = {};
+    if (typeof tokenOrCredential === 'string') {
+      if (tokenOrCredential.startsWith('ya29.')) {
+        payload = { access_token: tokenOrCredential };
+      } else {
+        payload = { credential: tokenOrCredential };
+      }
+    } else if (tokenOrCredential?.access_token) {
+      payload = { access_token: tokenOrCredential.access_token };
+    } else if (tokenOrCredential?.credential) {
+      payload = { credential: tokenOrCredential.credential };
+    } else {
+      payload = {
+        is_demo: true,
+        demo_email: demoData?.email || 'google.user@example.com',
+        demo_name: demoData?.name || 'Google Test User',
+      };
+    }
+
+    const res = await api.post('/auth/google', payload);
+    const token = res.data.access_token;
+    localStorage.setItem('token', token);
+
+    const meRes = await api.get('/auth/me');
+    const userData = meRes.data;
+    setUser(userData);
+    localStorage.setItem('risklens_user', JSON.stringify(userData));
+    return userData;
+  };
+
   const logout = () => {
     setUser(null);
     localStorage.removeItem('token');
@@ -84,6 +115,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         demoLogin,
+        googleLogin,
         logout,
       }}
     >

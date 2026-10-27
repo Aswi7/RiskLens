@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Activity, ArrowRight, ShieldCheck, Mail, Lock, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { GoogleSignInButton } from '../components/GoogleSignInButton';
 
 export const RegisterPage = () => {
   const { register } = useAuth();
@@ -166,6 +167,23 @@ export const RegisterPage = () => {
               )}
             </button>
           </form>
+
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-3 text-slate-400 font-semibold tracking-wider">
+                  Or continue with
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <GoogleSignInButton mode="signup" redirect={redirect} />
+            </div>
+          </div>
 
           <div className="mt-6 text-center text-xs text-slate-500">
             Already have an account?{' '}

@@ -80,5 +80,10 @@ export const predictRisk = async (payload) => {
   return res.data
 }
 
+export const simulateWhatIf = async (changeableInputs) => {
+  const res = await api.post('/what-if', changeableInputs)
+  return res.data
+}
+
 export default api
 

@@ -81,7 +81,7 @@ export const LandingPage = () => {
               </div>
 
               {/* Large Headline */}
-              <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.12]">
+              <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.18] sm:leading-[1.15]">
                 Understand Your Health. <span className="text-gradient-teal">Act Early.</span>
               </h1>
 
@@ -122,7 +122,7 @@ export const LandingPage = () => {
               <div className="absolute -inset-4 bg-gradient-to-tr from-teal-400/20 to-blue-600/20 rounded-3xl blur-2xl -z-10 animate-pulse-slow"></div>
 
               {/* Dashboard Card Container */}
-              <div className="bg-white/95 backdrop-blur-xl border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-2xl shadow-slate-900/10 space-y-5 animate-float">
+              <div className="bg-white/95 backdrop-blur-xl border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-2xl shadow-slate-900/10 space-y-5 animate-float select-none">
                 {/* Dashboard Top Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">

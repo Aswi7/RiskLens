@@ -56,13 +56,30 @@ class RiskDetail(BaseModel):
     threshold: float
 
 
+class UserFacingFactor(BaseModel):
+    featureKey: str
+    plainLabel: str
+    userValue: str
+    direction: str  # "raises" or "lowers"
+    strength: str   # "Strong", "Moderate", "Slight"
+    changeability: str  # "changeable" or "fixed"
+    note: str
+    rawShap: Optional[float] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class DiseaseRiskResult(BaseModel):
     risk: Optional[RiskDetail] = None
     shapValues: Optional[Dict[str, float]] = None
+    userFacingFactors: Optional[List[UserFacingFactor]] = None
+    explainerType: Optional[str] = None
     status: str  # "success" or "insufficient_data"
     missingFields: Optional[List[str]] = None
-    confidenceTier: Optional[str] = None  # "high", "partial", "screening"
+    confidenceTier: Optional[str] = None  # "standard", "partial", "screening"
     imputedFields: Optional[List[str]] = None
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class PredictionResponse(BaseModel):
@@ -76,3 +93,31 @@ class PredictionRecord(BaseModel):
     timestamp: str
     input_payload: Dict[str, Any]
     results: PredictionResponse
+
+
+class WhatIfRequest(BaseModel):
+    BMI: Optional[float] = Field(None, ge=10.0, le=70.0, description="Hypothetical Body Mass Index (10.0 - 70.0)")
+    PhysActivity: Optional[float] = Field(None, ge=0.0, le=1.0, description="Hypothetical physical activity: 0=No, 1=Yes")
+    Smoker: Optional[float] = Field(None, ge=0.0, le=1.0, description="Hypothetical smoking status: 0=No, 1=Yes")
+    Fruits: Optional[float] = Field(None, ge=0.0, le=1.0, description="Hypothetical daily fruit intake: 0=No, 1=Yes")
+    Veggies: Optional[float] = Field(None, ge=0.0, le=1.0, description="Hypothetical daily vegetable intake: 0=No, 1=Yes")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class WhatIfDiseaseComparison(BaseModel):
+    originalRiskLevel: str
+    originalProbability: float
+    newRiskLevel: str
+    newProbability: float
+    probabilityDelta: float
+    riskCategoryChanged: bool
+
+
+class WhatIfResponse(BaseModel):
+    diabetes: WhatIfDiseaseComparison
+    heartDisease: WhatIfDiseaseComparison
+    changesApplied: Dict[str, Any]
+    userFacingFactors: Dict[str, List[UserFacingFactor]]
+    disclaimer: str = "an estimate, not a promise"
+

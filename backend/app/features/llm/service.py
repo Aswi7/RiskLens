@@ -10,6 +10,7 @@ from app.features.llm.schemas import (
     ChatResponse,
     ChatMessage
 )
+from app.features.predictions.shap_service import generate_two_sentence_why_this_score
 
 logger = logging.getLogger("risklens.llm")
 
@@ -27,13 +28,18 @@ STRICT SAFETY CONSTRAINTS:
 2. NO MEDICATION ADVICE: Never recommend specific medications, dosages, or drug treatments.
 3. PHYSICIAN CONSULTATION: Explicitly advise consulting a physician when risk is moderate or high.
 4. SHAP-GROUNDED: Focus specifically on the user's top positive SHAP risk drivers. Do not invent unprovided lab values.
-5. MUST OUTPUT VALID JSON ONLY matching this exact structure:
+5. WHY THIS SCORE: You must provide a "whyThisScore" dictionary containing "diabetes" and "heartDisease". Each explanation MUST be exactly two sentences, written strictly from the top factors, with NO numerical values (no numbers, units, or percentages), and NEVER a diagnosis.
+6. MUST OUTPUT VALID JSON ONLY matching this exact structure:
 {
   "diet": ["Dietary recommendation 1", "Dietary recommendation 2"],
   "exercise": ["Exercise recommendation 1", "Exercise recommendation 2"],
   "sleep": "Sleep and lifestyle recovery guidance",
   "urgency": "low|moderate|high",
   "sharedRiskFactors": ["Shared risk factor 1"] (include only if both disease risks are elevated/moderate),
+  "whyThisScore": {
+    "diabetes": "Exactly two sentences written only from top factors without numbers and without diagnosis.",
+    "heartDisease": "Exactly two sentences written only from top factors without numbers and without diagnosis."
+  },
   "disclaimer": "Standard non-diagnostic medical safety disclaimer recommending physician consultation"
 }
 """
@@ -173,12 +179,20 @@ def fallback_recommendations_generator(prediction_results: Dict[str, Any], input
     if urgency in ["moderate", "high"]:
         disclaimer += " Because your risk indicators are moderate/elevated, a physician consultation is strongly recommended."
 
+    d_user_factors = diabetes.get("userFacingFactors") or []
+    h_user_factors = heart.get("userFacingFactors") or []
+    why_this_score = {
+        "diabetes": generate_two_sentence_why_this_score(d_user_factors, "Diabetes", d_high),
+        "heartDisease": generate_two_sentence_why_this_score(h_user_factors, "Heart Disease", h_high)
+    }
+
     return RecommendationResponse(
         diet=diet_recs,
         exercise=exercise_recs,
         sleep=sleep_guidance,
         urgency=urgency,
         sharedRiskFactors=shared_factors if shared_factors else None,
+        whyThisScore=why_this_score,
         disclaimer=disclaimer
     )
 
@@ -338,6 +352,13 @@ INPUT PAYLOAD:
     json_dict = call_llm_json(user_prompt, RECOMMENDATIONS_SYSTEM_PROMPT)
     if json_dict:
         try:
+            if "whyThisScore" not in json_dict or not json_dict["whyThisScore"]:
+                d_res = prediction_results.get("diabetes", {})
+                h_res = prediction_results.get("heartDisease", {})
+                json_dict["whyThisScore"] = {
+                    "diabetes": generate_two_sentence_why_this_score(d_res.get("userFacingFactors", []), "Diabetes", d_res.get("risk", {}).get("isHighRisk", False)),
+                    "heartDisease": generate_two_sentence_why_this_score(h_res.get("userFacingFactors", []), "Heart Disease", h_res.get("risk", {}).get("isHighRisk", False))
+                }
             return RecommendationResponse(**json_dict)
         except Exception as ve:
             logger.warning(f"Validation of LLM JSON output failed ({ve}). Using clinical fallback.")

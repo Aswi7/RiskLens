@@ -10,6 +10,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { LabReportModal } from '../components/LabReportModal';
+import { ExplainabilitySection } from '../components/ExplainabilitySection';
 
 export const DashboardPage = () => {
   const { user, logout } = useAuth();
@@ -398,7 +399,7 @@ export const DashboardPage = () => {
                 { id: 'overview', label: 'Risk Overview', icon: Activity },
                 { id: 'trend', label: 'Risk Trajectory Trend', icon: TrendingUp },
                 { id: 'labs', label: 'Lab Reports & Trends', icon: FileText },
-                { id: 'shap', label: 'SHAP Explainability', icon: Sparkles },
+                { id: 'shap', label: 'Why Your Results Look This Way', icon: Sparkles },
                 { id: 'recommendations', label: 'Personalized Checklist', icon: FileText },
                 { id: 'chat', label: 'AI Health Chatbot', icon: MessageSquare },
                 { id: 'specialists', label: 'Nearby Specialists', icon: MapPin },
@@ -671,61 +672,9 @@ export const DashboardPage = () => {
               </div>
             )}
 
-            {/* TAB 3: SHAP EXPLAINABILITY */}
+            {/* TAB 3: WHY YOUR RESULTS LOOK THIS WAY (SHAP EXPLAINABILITY) */}
             {activeTab === 'shap' && (
-              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-                <div>
-                  <span className="px-3 py-1 bg-teal-100 text-teal-800 rounded-full text-xs font-extrabold">
-                    SHAP Explainable AI Breakdown
-                  </span>
-                  <h2 className="font-heading text-2xl font-bold text-slate-900 mt-2">
-                    What factors drive your statistical risk scores?
-                  </h2>
-                  <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                    SHAP (Shapley Additive exPlanations) calculates feature weight contributions for each model independently.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
-                  {/* Diabetes SHAP */}
-                  <div className="space-y-3">
-                    <h3 className="font-heading font-bold text-base text-slate-900 border-b pb-2">
-                      Diabetes (TreeExplainer)
-                    </h3>
-                    {predictionData.diabetes?.shapValues ? (
-                      Object.entries(predictionData.diabetes.shapValues).map(([feat, val]) => (
-                        <div key={feat} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-800">{feat}</span>
-                          <span className={`font-extrabold ${Number(val) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                            {Number(val) > 0 ? `+${Number(val).toFixed(4)}` : Number(val).toFixed(4)}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-slate-400">No SHAP output available</p>
-                    )}
-                  </div>
-
-                  {/* Heart Disease SHAP */}
-                  <div className="space-y-3">
-                    <h3 className="font-heading font-bold text-base text-slate-900 border-b pb-2">
-                      Heart Disease (LinearExplainer)
-                    </h3>
-                    {predictionData.heartDisease?.shapValues ? (
-                      Object.entries(predictionData.heartDisease.shapValues).map(([feat, val]) => (
-                        <div key={feat} className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-800">{feat}</span>
-                          <span className={`font-extrabold ${Number(val) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                            {Number(val) > 0 ? `+${Number(val).toFixed(4)}` : Number(val).toFixed(4)}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-slate-400">No SHAP output available</p>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <ExplainabilitySection predictionData={predictionData} />
             )}
 
             {/* TAB 4: PERSONALIZED CHECKLIST RECOMMENDATIONS */}
@@ -764,6 +713,34 @@ export const DashboardPage = () => {
                   </div>
                 ) : recommendations ? (
                   <div className="space-y-6">
+                    {/* Two-Sentence Why This Score Callout */}
+                    {recommendations.whyThisScore && (
+                      <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-md space-y-4">
+                        <div className="flex items-center gap-2 text-teal-400 font-extrabold text-sm uppercase tracking-wider">
+                          <Sparkles className="w-4 h-4 text-teal-400" />
+                          <span>Why Your Results Look This Way</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {recommendations.whyThisScore.diabetes && (
+                            <div className="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/60 space-y-1">
+                              <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Type 2 Diabetes Context</div>
+                              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal">
+                                {recommendations.whyThisScore.diabetes}
+                              </p>
+                            </div>
+                          )}
+                          {recommendations.whyThisScore.heartDisease && (
+                            <div className="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/60 space-y-1">
+                              <div className="text-xs font-bold text-red-400 uppercase tracking-wider">Heart Disease Context</div>
+                              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal">
+                                {recommendations.whyThisScore.heartDisease}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Shared Risk Factors Callout */}
                     {recommendations.sharedRiskFactors && recommendations.sharedRiskFactors.length > 0 && (
                       <div className="bg-gradient-to-r from-teal-500/10 via-blue-500/10 to-indigo-500/10 border border-teal-200 p-6 rounded-3xl space-y-2">

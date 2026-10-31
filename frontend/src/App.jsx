@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AssessmentPage } from './pages/AssessmentPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { ExplainabilityDemoPage } from './pages/ExplainabilityDemoPage';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -49,6 +50,7 @@ export function App() {
           />
 
           {/* Catch-all fallback redirect */}
+          <Route path="/demo-shap" element={<ExplainabilityDemoPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>

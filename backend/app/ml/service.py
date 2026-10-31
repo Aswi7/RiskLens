@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple, List
 from app.ml.loader import ml_loader
+from app.features.predictions.shap_service import post_process_shap_factors
 
 
 def map_age_to_cdc_bucket(age: float) -> int:
@@ -119,6 +120,8 @@ def predict_diabetes_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
         for feat, val in zip(required_features, shap_raw)
     }
 
+    user_facing_factors = post_process_shap_factors(shap_dict, payload, "diabetes")
+
     return {
         "risk": {
             "probability": round(proba, 4),
@@ -127,6 +130,8 @@ def predict_diabetes_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
             "threshold": threshold
         },
         "shapValues": shap_dict,
+        "userFacingFactors": user_facing_factors,
+        "explainerType": "TreeExplainer (XGBoost)",
         "status": "success"
     }
 
@@ -225,6 +230,8 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         confidence_tier = "screening"
 
+    user_facing_factors = post_process_shap_factors(shap_dict, payload, "heart")
+
     return {
         "risk": {
             "probability": round(proba, 4),
@@ -233,6 +240,8 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
             "threshold": threshold
         },
         "shapValues": shap_dict,
+        "userFacingFactors": user_facing_factors,
+        "explainerType": "LinearExplainer (Logistic Regression)",
         "status": "success",
         "confidenceTier": confidence_tier,
         "imputedFields": imputed_fields

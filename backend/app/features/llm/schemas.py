@@ -14,6 +14,10 @@ class RecommendationResponse(BaseModel):
     sleep: str = Field(..., description="Sleep and lifestyle recovery guidance")
     urgency: str = Field(..., description="'low' | 'moderate' | 'high'")
     sharedRiskFactors: Optional[List[str]] = Field(None, description="Shared risk factors if both disease risks are elevated")
+    whyThisScore: Optional[Dict[str, str]] = Field(
+        None,
+        description="Two-sentence non-technical explanation per disease written only from top factors, without numbers and without diagnosis"
+    )
     disclaimer: str = Field(
         default="RiskLens provides statistical risk estimates and educational guidance for informational purposes only. It is not a clinical diagnosis or medical prescription. Always consult a qualified physician for personalized medical decisions.",
         description="Medical safety disclaimer"

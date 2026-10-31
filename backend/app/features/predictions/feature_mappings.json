@@ -1,0 +1,134 @@
+{
+  "features": {
+    "BMI": {
+      "plainLabel": "Body Mass Index",
+      "changeability": "changeable",
+      "note": "Body weight relative to height influences cellular insulin sensitivity and cardiac workload."
+    },
+    "HighBP": {
+      "plainLabel": "High Blood Pressure",
+      "changeability": "changeable",
+      "note": "Elevated arterial pressure strains blood vessels and increases metabolic resistance."
+    },
+    "trestbps": {
+      "plainLabel": "Resting Blood Pressure",
+      "changeability": "changeable",
+      "note": "Resting systolic pressure indicates how hard the heart works to circulate blood."
+    },
+    "HighChol": {
+      "plainLabel": "High Cholesterol History",
+      "changeability": "changeable",
+      "note": "Elevated blood lipids can accumulate along arterial walls over time."
+    },
+    "chol": {
+      "plainLabel": "Total Cholesterol",
+      "changeability": "changeable",
+      "note": "Serum cholesterol levels directly influence vascular and plaque dynamics."
+    },
+    "Smoker": {
+      "plainLabel": "Tobacco Smoking",
+      "changeability": "changeable",
+      "note": "Smoking introduces oxidative stress and promotes arterial inflammation."
+    },
+    "PhysActivity": {
+      "plainLabel": "Physical Activity",
+      "changeability": "changeable",
+      "note": "Regular exercise enhances glucose uptake in muscles and strengthens heart muscle."
+    },
+    "Fruits": {
+      "plainLabel": "Daily Fruit Intake",
+      "changeability": "changeable",
+      "note": "Whole fruits provide dietary fiber, potassium, and protective antioxidants."
+    },
+    "Veggies": {
+      "plainLabel": "Daily Vegetable Intake",
+      "changeability": "changeable",
+      "note": "Vegetables supply essential micronutrients and fiber that stabilize blood sugar."
+    },
+    "HvyAlcoholConsump": {
+      "plainLabel": "Heavy Alcohol Consumption",
+      "changeability": "changeable",
+      "note": "High alcohol intake affects liver metabolism, triglycerides, and blood pressure."
+    },
+    "GenHlth": {
+      "plainLabel": "General Health Rating",
+      "changeability": "changeable",
+      "note": "Self-rated vitality is a well-established indicator of systemic health."
+    },
+    "MentHlth": {
+      "plainLabel": "Mental Wellness Days",
+      "changeability": "changeable",
+      "note": "Chronic stress and poor mental health days can elevate baseline cortisol."
+    },
+    "PhysHlth": {
+      "plainLabel": "Physical Illness Days",
+      "changeability": "changeable",
+      "note": "Frequent physical illness reflects ongoing inflammatory or recovery burdens."
+    },
+    "DiffWalk": {
+      "plainLabel": "Mobility Limitations",
+      "changeability": "changeable",
+      "note": "Difficulty walking impacts daily movement and caloric expenditure."
+    },
+    "Stroke": {
+      "plainLabel": "History of Stroke",
+      "changeability": "fixed",
+      "note": "Past cerebrovascular events establish a higher baseline vascular risk."
+    },
+    "HeartDiseaseorAttack": {
+      "plainLabel": "Prior Heart Event / Attack",
+      "changeability": "fixed",
+      "note": "Previous coronary events inform ongoing baseline cardiac risk."
+    },
+    "Age": {
+      "plainLabel": "Age",
+      "changeability": "fixed",
+      "note": "Metabolic and vascular risk naturally increases as the body matures."
+    },
+    "age": {
+      "plainLabel": "Age",
+      "changeability": "fixed",
+      "note": "Age is an established, non-modifiable cardiovascular baseline factor."
+    },
+    "Sex": {
+      "plainLabel": "Biological Sex",
+      "changeability": "fixed",
+      "note": "Biological sex influences baseline hormonal profiles and cardiovascular patterns."
+    },
+    "sex": {
+      "plainLabel": "Biological Sex",
+      "changeability": "fixed",
+      "note": "Biological sex influences baseline hormonal profiles and cardiovascular patterns."
+    },
+    "fbs": {
+      "plainLabel": "Fasting Blood Sugar > 120",
+      "changeability": "changeable",
+      "note": "Elevated fasting blood sugar signals difficulty maintaining glucose homeostasis."
+    },
+    "exang": {
+      "plainLabel": "Exercise-Induced Discomfort",
+      "changeability": "changeable",
+      "note": "Chest tightness during exertion can indicate temporary cardiac oxygen strain."
+    },
+    "cp_0": {
+      "plainLabel": "Chest pain pattern (category 0)",
+      "changeability": "fixed",
+      "note": "Specific chest pain presentation reported during baseline evaluation."
+    },
+    "cp_1": {
+      "plainLabel": "Chest pain pattern (category 1)",
+      "changeability": "fixed",
+      "note": "Specific chest pain presentation reported during baseline evaluation."
+    },
+    "cp_2": {
+      "plainLabel": "Chest pain pattern (category 2)",
+      "changeability": "fixed",
+      "note": "Specific chest pain presentation reported during baseline evaluation."
+    },
+    "cp_3": {
+      "plainLabel": "Chest pain pattern (category 3)",
+      "changeability": "fixed",
+      "note": "Specific chest pain presentation reported during baseline evaluation."
+    }
+  }
+}

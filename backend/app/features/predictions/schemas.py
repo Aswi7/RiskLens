@@ -34,6 +34,18 @@ class HealthIntakePayload(BaseModel):
     fbs: Optional[float] = Field(None, ge=0, le=1, description="Fasting blood sugar > 120 mg/dl: 0=False, 1=True")
     exang: Optional[float] = Field(None, ge=0, le=1, description="Exercise induced angina: 0=No, 1=Yes")
 
+    # Lab and Vitals explicit fields
+    bpSystolic: Optional[float] = Field(None, ge=40, le=300, description="Systolic Blood Pressure in mmHg")
+    bpDiastolic: Optional[float] = Field(None, ge=30, le=200, description="Diastolic Blood Pressure in mmHg")
+    glucose: Optional[float] = Field(None, ge=20, le=800, description="Blood Glucose in mg/dl")
+    fastingGlucose: Optional[float] = Field(None, ge=20, le=800, description="Fasting Blood Glucose in mg/dl")
+    totalCholesterol: Optional[float] = Field(None, ge=30, le=1000, description="Total Cholesterol in mg/dl")
+    ldl: Optional[float] = Field(None, ge=10, le=800, description="LDL Cholesterol in mg/dl")
+    hdl: Optional[float] = Field(None, ge=5, le=250, description="HDL Cholesterol in mg/dl")
+    triglycerides: Optional[float] = Field(None, ge=10, le=2500, description="Triglycerides in mg/dl")
+    hba1c: Optional[float] = Field(None, ge=3.0, le=25.0, description="HbA1c in %")
+    confidenceTier: Optional[str] = Field(None, description="Tiered confidence rating: high, partial, screening")
+
     model_config = ConfigDict(extra="allow", allow_inf_nan=False)
 
 
@@ -49,6 +61,8 @@ class DiseaseRiskResult(BaseModel):
     shapValues: Optional[Dict[str, float]] = None
     status: str  # "success" or "insufficient_data"
     missingFields: Optional[List[str]] = None
+    confidenceTier: Optional[str] = None  # "high", "partial", "screening"
+    imputedFields: Optional[List[str]] = None
 
 
 class PredictionResponse(BaseModel):

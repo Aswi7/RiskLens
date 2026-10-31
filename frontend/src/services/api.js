@@ -42,5 +42,41 @@ api.interceptors.response.use(
   }
 )
 
+// Lab Analysis API Service methods
+export const extractLabReport = async (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await api.post('/labs/extract', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000,
+  })
+  return res.data
+}
+
+export const interpretBiomarkers = async (payload) => {
+  const res = await api.post('/labs/interpret', payload)
+  return res.data
+}
+
+export const confirmLabReport = async (payload) => {
+  const res = await api.post('/labs/confirm', payload)
+  return res.data
+}
+
+export const getLatestLabReport = async () => {
+  const res = await api.get('/labs/latest')
+  return res.data
+}
+
+export const getLabReportsHistory = async (limit = 20) => {
+  const res = await api.get(`/labs/history?limit=${limit}`)
+  return res.data
+}
+
+export const predictRisk = async (payload) => {
+  const res = await api.post('/predict', payload)
+  return res.data
+}
+
 export default api
 

@@ -143,6 +143,7 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
     raw_required = ml_loader.heart_meta.get("features_original", ["age", "sex", "cp", "trestbps", "chol", "fbs", "exang"])
     imputation_medians = ml_loader.heart_meta.get("imputation_medians", {})
     missing_fields = []
+    imputed_fields = []
     raw_dict = {}
 
     for feat in raw_required:
@@ -150,6 +151,7 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
         if val is None:
             if feat in imputation_medians:
                 raw_dict[feat] = float(imputation_medians[feat])
+                imputed_fields.append(feat)
             else:
                 missing_fields.append(feat)
         else:
@@ -160,7 +162,9 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
             "risk": None,
             "shapValues": None,
             "status": "insufficient_data",
-            "missingFields": missing_fields
+            "missingFields": missing_fields,
+            "confidenceTier": None,
+            "imputedFields": None
         }
 
     # One-hot encode cp (0, 1, 2, 3)
@@ -208,6 +212,19 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
         for feat, val in zip(encoded_features, shap_raw)
     }
 
+    # Tiered Confidence Calculation:
+    # High: All clinical values (trestbps, chol, fbs) provided/verified (no imputations)
+    # Partial: At least one of trestbps or chol provided; others imputed
+    # Screening: All clinical metrics imputed with population medians
+    if "confidenceTier" in payload and payload["confidenceTier"]:
+        confidence_tier = payload["confidenceTier"]
+    elif len(imputed_fields) == 0:
+        confidence_tier = "high"
+    elif "trestbps" not in imputed_fields or "chol" not in imputed_fields:
+        confidence_tier = "partial"
+    else:
+        confidence_tier = "screening"
+
     return {
         "risk": {
             "probability": round(proba, 4),
@@ -216,7 +233,9 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
             "threshold": threshold
         },
         "shapValues": shap_dict,
-        "status": "success"
+        "status": "success",
+        "confidenceTier": confidence_tier,
+        "imputedFields": imputed_fields
     }
 
 

@@ -17,7 +17,8 @@ router = APIRouter(tags=["Predictions"])
 @router.post("/predict", response_model=PredictionResponse)
 async def predict_risk(
     payload: HealthIntakePayload,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Any = Depends(get_database)
 ):
     """
     Run independent risk prediction & SHAP explanations for Diabetes and Heart Disease models.
@@ -48,36 +49,51 @@ async def predict_risk(
         "results": results
     }
 
-    db = get_database()
-    await db.predictions.insert_one(doc)
+    if db is not None:
+        await db.predictions.insert_one(doc)
 
-    # --- PERSIST TO SEPARATE MONGODB COLLECTIONS ---
-    # 1. medicalHistory collection
-    med_history = full_dict.get("medicalHistory") or full_dict.get("medical_history") or []
-    if med_history:
-        await db.medicalHistory.insert_one({
+        # --- PERSIST TO SEPARATE MONGODB COLLECTIONS ---
+        # 1. medicalHistory collection
+        med_history = full_dict.get("medicalHistory") or full_dict.get("medical_history") or []
+        if med_history:
+            await db.medicalHistory.insert_one({
+                "user_id": current_user["id"],
+                "timestamp": timestamp,
+                "medicalHistory": med_history
+            })
+
+        # 2. wellness collection (Mental Wellness - optional, non-diagnostic, separate from ML models)
+        mental_wellness = full_dict.get("mentalWellness") or full_dict.get("mental_wellness")
+        if mental_wellness:
+            await db.wellness.insert_one({
+                "user_id": current_user["id"],
+                "timestamp": timestamp,
+                "mentalWellness": mental_wellness,
+                "is_optional": True,
+                "note": "NON-DIAGNOSTIC mental wellness context. Feeds LLM context only, NEVER passed to ML models."
+            })
+
+        # 3. healthScores collection
+        await db.healthScores.insert_one({
             "user_id": current_user["id"],
             "timestamp": timestamp,
-            "medicalHistory": med_history
+            "healthScore": health_score_dict
         })
 
-    # 2. wellness collection (Mental Wellness - optional, non-diagnostic, separate from ML models)
-    mental_wellness = full_dict.get("mentalWellness") or full_dict.get("mental_wellness")
-    if mental_wellness:
-        await db.wellness.insert_one({
-            "user_id": current_user["id"],
-            "timestamp": timestamp,
-            "mentalWellness": mental_wellness,
-            "is_optional": True,
-            "note": "NON-DIAGNOSTIC mental wellness context. Feeds LLM context only, NEVER passed to ML models."
-        })
-
-    # 3. healthScores collection
-    await db.healthScores.insert_one({
-        "user_id": current_user["id"],
-        "timestamp": timestamp,
-        "healthScore": health_score_dict
-    })
+        # 4. vitals collection
+        has_vitals = any(full_dict.get(k) is not None for k in ["bpSystolic", "trestbps", "totalCholesterol", "chol", "glucose", "fastingGlucose", "hba1c"])
+        if has_vitals:
+            await db.vitals.insert_one({
+                "user_id": current_user["id"],
+                "timestamp": timestamp,
+                "source": "assessment",
+                "bp_systolic": full_dict.get("bpSystolic") or full_dict.get("trestbps"),
+                "bp_diastolic": full_dict.get("bpDiastolic"),
+                "total_cholesterol": full_dict.get("totalCholesterol") or full_dict.get("chol"),
+                "fasting_glucose": full_dict.get("fastingGlucose") or full_dict.get("glucose"),
+                "hba1c": full_dict.get("hba1c"),
+                "confidence_tier": results.get("heartDisease", {}).get("confidenceTier")
+            })
 
     return results
 

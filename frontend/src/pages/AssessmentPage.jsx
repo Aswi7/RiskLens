@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, ArrowRight, ArrowLeft, Check, Sparkles, Upload, Watch, Lock, AlertCircle, Plus, X, Search, ShieldCheck, HeartPulse } from 'lucide-react';
 import api from '../services/api';
+import { LabReportModal } from '../components/LabReportModal';
 
 export const AssessmentPage = () => {
   const navigate = useNavigate();
@@ -10,6 +11,7 @@ export const AssessmentPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingStage, setLoadingStage] = useState('');
   const [errorMsg, setErrorMsg] = useState(null);
+  const [confirmedLabReport, setConfirmedLabReport] = useState(null);
 
   // Search filter for symptoms step
   const [symptomSearch, setSymptomSearch] = useState('');
@@ -73,6 +75,11 @@ export const AssessmentPage = () => {
     heartRate: '',
     fastingGlucose: '',
     totalCholesterol: '',
+    hdl: '',
+    ldl: '',
+    triglycerides: '',
+    hba1c: '',
+    confidenceTier: 'screening',
 
     // Step 7: Lab OCR
     labReportUploaded: false,
@@ -304,6 +311,32 @@ export const AssessmentPage = () => {
     }
   };
 
+  const handleLabConfirmed = (confirmedVals, report) => {
+    setFormData((prev) => ({
+      ...prev,
+      bpSystolic: confirmedVals.bp_systolic !== undefined && confirmedVals.bp_systolic !== '' ? String(confirmedVals.bp_systolic) : prev.bpSystolic,
+      bpDiastolic: confirmedVals.bp_diastolic !== undefined && confirmedVals.bp_diastolic !== '' ? String(confirmedVals.bp_diastolic) : prev.bpDiastolic,
+      totalCholesterol: confirmedVals.total_cholesterol !== undefined && confirmedVals.total_cholesterol !== '' ? String(confirmedVals.total_cholesterol) : prev.totalCholesterol,
+      hdl: confirmedVals.hdl_cholesterol !== undefined && confirmedVals.hdl_cholesterol !== '' ? String(confirmedVals.hdl_cholesterol) : prev.hdl,
+      ldl: confirmedVals.ldl_cholesterol !== undefined && confirmedVals.ldl_cholesterol !== '' ? String(confirmedVals.ldl_cholesterol) : prev.ldl,
+      triglycerides: confirmedVals.triglycerides !== undefined && confirmedVals.triglycerides !== '' ? String(confirmedVals.triglycerides) : prev.triglycerides,
+      fastingGlucose: confirmedVals.fasting_glucose !== undefined && confirmedVals.fasting_glucose !== '' ? String(confirmedVals.fasting_glucose) : prev.fastingGlucose,
+      glucose: confirmedVals.fasting_glucose !== undefined && confirmedVals.fasting_glucose !== '' ? String(confirmedVals.fasting_glucose) : prev.glucose,
+      hba1c: confirmedVals.hba1c !== undefined && confirmedVals.hba1c !== '' ? String(confirmedVals.hba1c) : prev.hba1c,
+      confidenceTier: report?.model_inputs?.confidence_tier || 'high',
+      labReportUploaded: true
+    }));
+    if (report) {
+      setConfirmedLabReport(report);
+      try {
+        localStorage.setItem('risklens_latest_lab_report', JSON.stringify(report));
+      } catch (e) {
+        console.warn('Could not cache lab report in localStorage:', e);
+      }
+    }
+    handleNext();
+  };
+
   const handleNext = () => {
     if (currentStep < 10) {
       setCurrentStep((prev) => prev + 1);
@@ -360,11 +393,25 @@ export const AssessmentPage = () => {
         PhysHlth: formData.exercise === 'high' ? 0 : 2,
 
         // Heart Disease parameters (7 raw fields)
-        trestbps: parseFloat(formData.bpSystolic) || 120,
-        chol: parseFloat(formData.totalCholesterol) || 200,
-        fbs: (parseFloat(formData.glucose) > 120 || parseFloat(formData.fastingGlucose) > 120) ? 1 : 0,
+        trestbps: formData.bpSystolic ? parseFloat(formData.bpSystolic) : null,
+        chol: formData.totalCholesterol ? parseFloat(formData.totalCholesterol) : null,
+        fbs: (formData.glucose || formData.fastingGlucose || formData.hba1c)
+          ? ((parseFloat(formData.glucose) > 120 || parseFloat(formData.fastingGlucose) > 120 || parseFloat(formData.hba1c) >= 6.5) ? 1 : 0)
+          : null,
         exang: formData.exerciseAngina ? 1 : 0,
         cp: cpMap[formData.chestPainType] ?? 0,
+
+        // Explicit vitals and lab fields for database persistence and tiered confidence
+        bpSystolic: formData.bpSystolic ? parseFloat(formData.bpSystolic) : null,
+        bpDiastolic: formData.bpDiastolic ? parseFloat(formData.bpDiastolic) : null,
+        totalCholesterol: formData.totalCholesterol ? parseFloat(formData.totalCholesterol) : null,
+        ldl: formData.ldl ? parseFloat(formData.ldl) : null,
+        hdl: formData.hdl ? parseFloat(formData.hdl) : null,
+        triglycerides: formData.triglycerides ? parseFloat(formData.triglycerides) : null,
+        fastingGlucose: formData.fastingGlucose ? parseFloat(formData.fastingGlucose) : null,
+        glucose: formData.glucose ? parseFloat(formData.glucose) : null,
+        hba1c: formData.hba1c ? parseFloat(formData.hba1c) : null,
+        confidenceTier: formData.confidenceTier || (formData.labReportUploaded ? 'high' : null),
 
         // --- NON-ML ONBOARDING INTAKE (Feeds MongoDB & LLM Context ONLY, NOT passed to ML prediction models) ---
         medicalHistory: formData.medicalHistory,
@@ -1056,33 +1103,11 @@ export const AssessmentPage = () => {
           {/* Step 7: Optional Lab Report */}
           {currentStep === 7 && (
             <div className="space-y-6">
-              <div>
-                <h2 className="font-heading text-2xl font-bold text-slate-900">Lab Report Integration</h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  Optional: Upload blood panel report to import glucose &amp; cholesterol automatically.
-                </p>
-              </div>
-
-              <div className="border-2 border-dashed border-slate-200 hover:border-teal-400 rounded-2xl p-8 text-center bg-slate-50/50 transition-colors">
-                <Upload className="w-10 h-10 text-teal-600 mx-auto mb-3" />
-                <h3 className="font-semibold text-slate-800 text-sm">Upload Blood Panel PDF or Image</h3>
-                <p className="text-xs text-slate-400 mt-1">Supports standard lab reports (PDF, PNG, JPG)</p>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleInputChange('labReportUploaded', true);
-                    handleInputChange('glucose', '135');
-                    handleInputChange('totalCholesterol', '224');
-                    handleInputChange('bpSystolic', '132');
-                    handleInputChange('bpDiastolic', '84');
-                    alert('Lab OCR Parse Simulated! Glucose (135 mg/dL), Cholesterol (224 mg/dL), and BP (132/84 mmHg) populated.');
-                  }}
-                  className="mt-4 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-teal-700 hover:bg-teal-50 transition-colors cursor-pointer"
-                >
-                  ⚡ Simulate Lab Report OCR Import
-                </button>
-              </div>
+              <LabReportModal
+                onConfirm={handleLabConfirmed}
+                initialValues={formData}
+                isModal={false}
+              />
             </div>
           )}
 

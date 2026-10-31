@@ -11,6 +11,7 @@ from app.features.auth.routers import router as auth_router
 from app.features.predictions.routers import router as predictions_router
 from app.features.llm.routers import router as llm_router
 from app.features.hospitals.routers import router as hospitals_router
+from app.features.labs.routers import router as labs_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,12 +24,18 @@ logger = logging.getLogger("risklens.main")
 async def lifespan(app: FastAPI):
     # Startup: Connect to MongoDB & Load ML Models ONCE
     logger.info("Starting RiskLens API server...")
-    await connect_to_mongo()
+    try:
+        await connect_to_mongo()
+    except Exception as e:
+        logger.warning(f"MongoDB connection failed during startup: {e}")
     ml_loader.load_artifacts()
     yield
     # Shutdown: Close DB connections
     logger.info("Shutting down RiskLens API server...")
-    await close_mongo_connection()
+    try:
+        await close_mongo_connection()
+    except Exception as e:
+        logger.warning(f"Error closing MongoDB connection: {e}")
 
 
 app = FastAPI(
@@ -55,6 +62,7 @@ app.include_router(predictions_router)
 app.include_router(llm_router)
 app.include_router(hospitals_router)
 app.include_router(health_router)
+app.include_router(labs_router, prefix="/labs")
 
 
 import math

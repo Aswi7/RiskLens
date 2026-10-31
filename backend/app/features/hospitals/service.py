@@ -149,6 +149,71 @@ async def fetch_nearby_hospitals(
     try:
         async with httpx.AsyncClient(timeout=6.0) as client:
             for kw in specialist_keywords:
+                label_specialty = "Endocrinologist" if kw == "endocrinologist" else "Cardiologist" if kw == "cardiologist" else "General Hospital"
+                keyword_results_found = False
+
+                # 1. Try Google Places API (New) first (preferred by modern Google Cloud projects)
+                try:
+                    headers = {
+                        "Content-Type": "application/json",
+                        "X-Goog-Api-Key": api_key,
+                        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.googleMapsUri,places.currentOpeningHours"
+                    }
+                    if lat is not None and lng is not None:
+                        payload = {
+                            "textQuery": f"{kw} hospital",
+                            "maxResultCount": 5,
+                            "locationBias": {
+                                "circle": {
+                                    "center": {"latitude": lat, "longitude": lng},
+                                    "radius": 15000.0
+                                }
+                            }
+                        }
+                    else:
+                        payload = {
+                            "textQuery": f"{kw} hospital in {location}",
+                            "maxResultCount": 5
+                        }
+
+                    resp_new = await client.post("https://places.googleapis.com/v1/places:searchText", headers=headers, json=payload)
+                    if resp_new.status_code == 200:
+                        data_new = resp_new.json()
+                        places_list = data_new.get("places", [])
+                        if places_list:
+                            for item in places_list[:5]:
+                                p_lat = item.get("location", {}).get("latitude")
+                                p_lng = item.get("location", {}).get("longitude")
+
+                                dist_str = "Nearby"
+                                if lat is not None and lng is not None and p_lat is not None and p_lng is not None:
+                                    dist_str = calculate_haversine_distance(lat, lng, p_lat, p_lng)
+
+                                name = item.get("displayName", {}).get("text", "Medical Facility")
+                                gmaps_url = item.get("googleMapsUri") or f"https://www.google.com/maps/search/?api=1&query={name.replace(' ', '+')}"
+
+                                results.append({
+                                    "id": item.get("id", f"place_{len(results)}"),
+                                    "name": name,
+                                    "specialty": f"{label_specialty} ({kw.capitalize()})",
+                                    "address": item.get("formattedAddress") or "Local Area",
+                                    "rating": float(item.get("rating", 4.5)),
+                                    "user_ratings_total": int(item.get("userRatingCount", 50)),
+                                    "distance": dist_str,
+                                    "open_now": item.get("currentOpeningHours", {}).get("openNow", True),
+                                    "phone": "+1 (555) 123-4567",
+                                    "lat": p_lat,
+                                    "lng": p_lng,
+                                    "google_maps_url": gmaps_url
+                                })
+                            keyword_results_found = True
+                except Exception as e_new:
+                    logger.debug(f"Places API (New) call issue: {e_new}")
+
+                if keyword_results_found:
+                    continue
+
+                # 2. Fallback to Legacy Google Places API (for legacy enabled keys)
                 if lat is not None and lng is not None:
                     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
                     params = {
@@ -176,8 +241,6 @@ async def fetch_nearby_hospitals(
                             dist_str = "Nearby"
                             if lat is not None and lng is not None and p_lat is not None and p_lng is not None:
                                 dist_str = calculate_haversine_distance(lat, lng, p_lat, p_lng)
-
-                            label_specialty = "Endocrinologist" if kw == "endocrinologist" else "Cardiologist" if kw == "cardiologist" else "General Hospital"
 
                             results.append({
                                 "id": item.get("place_id", f"place_{len(results)}"),

@@ -1,0 +1,176 @@
+{
+  "analytes": [
+    {
+      "canonical_key": "fasting_glucose",
+      "name": "Fasting Blood Glucose",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [20.0, 800.0],
+      "glucose_type": "fasting",
+      "synonyms": [
+        "fasting\\s+(?:plasma\\s+|blood\\s+)?glucose",
+        "glucose[,\t ]+fasting",
+        "\\bfbs\\b",
+        "\\bfbg\\b",
+        "fasting\\s+blood\\s+sugar",
+        "plasma\\s+glucose\\s+fasting"
+      ],
+      "conversions": {
+        "mmol/l": 18.0
+      }
+    },
+    {
+      "canonical_key": "random_glucose",
+      "name": "Random Blood Glucose",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [20.0, 800.0],
+      "glucose_type": "random",
+      "synonyms": [
+        "random\\s+(?:plasma\\s+|blood\\s+)?glucose",
+        "glucose[,\t ]+random",
+        "\\brbs\\b",
+        "random\\s+blood\\s+sugar",
+        "plasma\\s+glucose\\s+random"
+      ],
+      "conversions": {
+        "mmol/l": 18.0
+      }
+    },
+    {
+      "canonical_key": "postprandial_glucose",
+      "name": "Post-Prandial Blood Glucose",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [20.0, 800.0],
+      "glucose_type": "postprandial",
+      "synonyms": [
+        "post[- ]?prandial\\s+(?:plasma\\s+|blood\\s+)?glucose",
+        "glucose[,\t ]+post[- ]?prandial",
+        "\\bppbs\\b",
+        "\\bppbg\\b",
+        "2[- ]?hour\\s+post[- ]?prandial",
+        "after\\s+meal\\s+glucose"
+      ],
+      "conversions": {
+        "mmol/l": 18.0
+      }
+    },
+    {
+      "canonical_key": "unknown_glucose",
+      "name": "Blood Glucose (Type Unclear)",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [20.0, 800.0],
+      "glucose_type": "unknown",
+      "synonyms": [
+        "serum\\s+glucose",
+        "glucose[,\t ]+serum",
+        "blood\\s+glucose",
+        "plasma\\s+glucose",
+        "\\bglucose\\b"
+      ],
+      "conversions": {
+        "mmol/l": 18.0
+      }
+    },
+    {
+      "canonical_key": "hba1c",
+      "name": "Hemoglobin A1c (HbA1c)",
+      "canonical_unit": "%",
+      "plausible_range": [3.0, 25.0],
+      "synonyms": [
+        "hemoglobin\\s+a1c",
+        "glycated\\s+hemoglobin",
+        "glycohemoglobin",
+        "\\bhba1c\\b",
+        "\\ba1c\\b"
+      ],
+      "conversions": {
+        "mmol/mol": "formula:0.0915*val+2.15"
+      }
+    },
+    {
+      "canonical_key": "total_cholesterol",
+      "name": "Total Cholesterol",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [30.0, 1000.0],
+      "synonyms": [
+        "total\\s+cholesterol",
+        "cholesterol[,\t ]+total",
+        "serum\\s+cholesterol",
+        "cholesterol\\s+serum",
+        "\\bchol\\b",
+        "total\\s+chol"
+      ],
+      "conversions": {
+        "mmol/l": 38.67
+      }
+    },
+    {
+      "canonical_key": "ldl_cholesterol",
+      "name": "LDL Cholesterol",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [10.0, 800.0],
+      "synonyms": [
+        "ldl\\s+cholesterol",
+        "ldl-c\\b",
+        "cholesterol[,\t ]+ldl",
+        "ldl\\s+calculated",
+        "direct\\s+ldl",
+        "\\bldl\\b"
+      ],
+      "conversions": {
+        "mmol/l": 38.67
+      }
+    },
+    {
+      "canonical_key": "hdl_cholesterol",
+      "name": "HDL Cholesterol",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [5.0, 250.0],
+      "synonyms": [
+        "hdl\\s+cholesterol",
+        "hdl-c\\b",
+        "cholesterol[,\t ]+hdl",
+        "direct\\s+hdl",
+        "\\bhdl\\b"
+      ],
+      "conversions": {
+        "mmol/l": 38.67
+      }
+    },
+    {
+      "canonical_key": "triglycerides",
+      "name": "Triglycerides",
+      "canonical_unit": "mg/dL",
+      "plausible_range": [10.0, 2500.0],
+      "synonyms": [
+        "triglycerides?",
+        "\\btrig\\b",
+        "serum\\s+triglycerides?"
+      ],
+      "conversions": {
+        "mmol/l": 88.57
+      }
+    },
+    {
+      "canonical_key": "bp_systolic",
+      "name": "Systolic Blood Pressure",
+      "canonical_unit": "mmHg",
+      "plausible_range": [40.0, 300.0],
+      "synonyms": [
+        "systolic\\s+blood\\s+pressure",
+        "systolic\\s+bp",
+        "sbp\\b"
+      ]
+    },
+    {
+      "canonical_key": "bp_diastolic",
+      "name": "Diastolic Blood Pressure",
+      "canonical_unit": "mmHg",
+      "plausible_range": [30.0, 200.0],
+      "synonyms": [
+        "diastolic\\s+blood\\s+pressure",
+        "diastolic\\s+bp",
+        "dbp\\b"
+      ]
+    }
+  ]
+}

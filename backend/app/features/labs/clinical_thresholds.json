@@ -1,0 +1,248 @@
+{
+  "_citations": {
+    "diabetes_guidance": "American Diabetes Association (ADA) Standards of Care in Diabetes (Classification and Diagnosis of Diabetes). Fasting plasma glucose: <100 mg/dL normal, 100-125 mg/dL prediabetes, >=126 mg/dL diabetes. HbA1c: <5.7% normal, 5.7-6.4% prediabetes, >=6.5% diabetes. Confirmation with repeat testing on a separate day recommended.",
+    "cholesterol_guidance": "American College of Cardiology / American Heart Association (ACC/AHA) Multisociety Guideline on the Management of Blood Cholesterol & NCEP ATP III. Total cholesterol: <200 desirable, 200-239 borderline high, >=240 high. LDL: <100 optimal, 100-129 near optimal, 130-159 borderline high, 160-189 high, >=190 very high. HDL: <40 (men) / <50 (women) low risk factor, >=60 protective. Triglycerides: <150 normal, 150-199 borderline, 200-499 high, >=500 very high.",
+    "hypertension_guidance": "2017 ACC/AHA/AAPA/ABC/ACPM/AGS/APhA/ASH/ASPC/NMA/PCNA Guideline for the Prevention, Detection, Evaluation, and Management of High Blood Pressure in Adults. Normal: <120/<80 mmHg, Elevated: 120-129/<80 mmHg, Stage 1: 130-139 or 80-89 mmHg, Stage 2: >=140 or >=90 mmHg, Crisis: >180 and/or >120 mmHg."
+  },
+  "thresholds": {
+    "fasting_glucose": [
+      {
+        "max": 99.99,
+        "category": "normal",
+        "severity": 1,
+        "message": "Fasting blood glucose is in the normal range on this test; confirm with a clinician.",
+        "repeat_note": null
+      },
+      {
+        "min": 100.0,
+        "max": 125.99,
+        "category": "prediabetes range",
+        "severity": 2,
+        "message": "Fasting blood glucose is in the prediabetes range on this test; confirm with a clinician.",
+        "repeat_note": "ADA clinical guidance advises confirming impaired fasting glucose with repeat testing or an HbA1c test."
+      },
+      {
+        "min": 126.0,
+        "category": "diabetes range",
+        "severity": 3,
+        "message": "Fasting blood glucose is in the diabetes range on this test; confirm with a clinician.",
+        "repeat_note": "ADA diagnostic criteria recommend confirmation with repeat testing on a separate day unless unequivocal acute symptoms are present."
+      }
+    ],
+    "hba1c": [
+      {
+        "max": 5.69,
+        "category": "normal",
+        "severity": 1,
+        "message": "HbA1c is in the normal range on this test; confirm with a clinician.",
+        "repeat_note": null
+      },
+      {
+        "min": 5.7,
+        "max": 6.49,
+        "category": "prediabetes range",
+        "severity": 2,
+        "message": "HbA1c is in the prediabetes range on this test; confirm with a clinician.",
+        "repeat_note": "ADA guidance recommends lifestyle intervention and periodic repeat testing every 6 to 12 months."
+      },
+      {
+        "min": 6.5,
+        "category": "diabetes range",
+        "severity": 3,
+        "message": "HbA1c is in the diabetes range on this test; confirm with a clinician.",
+        "repeat_note": "Clinical standards recommend confirming with repeat testing or a fasting glucose panel before formal clinical diagnosis."
+      }
+    ],
+    "total_cholesterol": [
+      {
+        "max": 199.99,
+        "category": "desirable",
+        "severity": 1,
+        "message": "Total cholesterol is in the desirable range on this test; confirm with a clinician.",
+        "repeat_note": null
+      },
+      {
+        "min": 200.0,
+        "max": 239.99,
+        "category": "borderline high",
+        "severity": 2,
+        "message": "Total cholesterol is in the borderline high range on this test; confirm with a clinician.",
+        "repeat_note": "AHA guidance recommends reviewing with a physician and rechecking in 6 months."
+      },
+      {
+        "min": 240.0,
+        "category": "high",
+        "severity": 3,
+        "message": "Total cholesterol is in the high range on this test; confirm with a clinician.",
+        "repeat_note": "ACC/AHA guidelines recommend full fasting lipid fractionation and formal cardiovascular risk assessment."
+      }
+    ],
+    "ldl_cholesterol": [
+      {
+        "max": 99.99,
+        "category": "optimal",
+        "severity": 1,
+        "message": "LDL cholesterol is in the optimal range on this test; confirm with a clinician.",
+        "repeat_note": null
+      },
+      {
+        "min": 100.0,
+        "max": 129.99,
+        "category": "near optimal",
+        "severity": 1,
+        "message": "LDL cholesterol is in the near optimal range on this test; confirm with a clinician.",
+        "repeat_note": null
+      },
+      {
+        "min": 130.0,
+        "max": 159.99,
+        "category": "borderline high",
+        "severity": 2,
+        "message": "LDL cholesterol is in the borderline high range on this test; confirm with a clinician.",
+        "repeat_note": "Discuss dietary saturated fat intake and follow-up lipid monitoring with a clinician."
+      },
+      {
+        "min": 160.0,
+        "max": 189.99,
+        "category": "high",
+        "severity": 3,
+        "message": "LDL cholesterol is in the high range on this test; confirm with a clinician.",
+        "repeat_note": "ACC/AHA guidelines recommend comprehensive cardiovascular risk discussion."
+      },
+      {
+        "min": 190.0,
+        "category": "very high",
+        "severity": 4,
+        "message": "LDL cholesterol is in the very high range on this test; confirm with a clinician.",
+        "repeat_note": "ACC/AHA guidelines recommend prompt clinical evaluation for primary hypercholesterolemia."
+      }
+    ],
+    "hdl_cholesterol": {
+      "male": [
+        {
+          "max": 39.99,
+          "category": "low",
+          "severity": 3,
+          "message": "HDL cholesterol is in the low range on this test; confirm with a clinician.",
+          "repeat_note": "Low HDL (<40 mg/dL for men) is considered an independent cardiovascular risk factor."
+        },
+        {
+          "min": 40.0,
+          "max": 59.99,
+          "category": "acceptable",
+          "severity": 1,
+          "message": "HDL cholesterol is in the acceptable range on this test; confirm with a clinician.",
+          "repeat_note": null
+        },
+        {
+          "min": 60.0,
+          "category": "protective",
+          "severity": 1,
+          "message": "HDL cholesterol is in the protective range on this test; confirm with a clinician.",
+          "repeat_note": null
+        }
+      ],
+      "female": [
+        {
+          "max": 49.99,
+          "category": "low",
+          "severity": 3,
+          "message": "HDL cholesterol is in the low range on this test; confirm with a clinician.",
+          "repeat_note": "Low HDL (<50 mg/dL for women) is considered an independent cardiovascular risk factor."
+        },
+        {
+          "min": 50.0,
+          "max": 59.99,
+          "category": "acceptable",
+          "severity": 1,
+          "message": "HDL cholesterol is in the acceptable range on this test; confirm with a clinician.",
+          "repeat_note": null
+        },
+        {
+          "min": 60.0,
+          "category": "protective",
+          "severity": 1,
+          "message": "HDL cholesterol is in the protective range on this test; confirm with a clinician.",
+          "repeat_note": null
+        }
+      ]
+    },
+    "triglycerides": [
+      {
+        "max": 149.99,
+        "category": "normal",
+        "severity": 1,
+        "message": "Triglycerides level is in the normal range on this test; confirm with a clinician.",
+        "repeat_note": null
+      },
+      {
+        "min": 150.0,
+        "max": 199.99,
+        "category": "borderline",
+        "severity": 2,
+        "message": "Triglycerides level is in the borderline range on this test; confirm with a clinician.",
+        "repeat_note": "Consider evaluation of dietary carbohydrates, added sugars, and repeat lipid testing."
+      },
+      {
+        "min": 200.0,
+        "max": 499.99,
+        "category": "high",
+        "severity": 3,
+        "message": "Triglycerides level is in the high range on this test; confirm with a clinician.",
+        "repeat_note": "AHA guidance recommends evaluating for metabolic syndrome and repeating test after fasting."
+      },
+      {
+        "min": 500.0,
+        "category": "very high",
+        "severity": 4,
+        "message": "Triglycerides level is in the very high range on this test; confirm with a clinician.",
+        "repeat_note": "Immediate clinical review advised due to potential risk of pancreatitis."
+      }
+    ],
+    "blood_pressure": [
+      {
+        "sys_max": 119.99,
+        "dia_max": 79.99,
+        "category": "normal",
+        "severity": 1,
+        "message": "Blood pressure is in the normal range on this test; confirm with a clinician.",
+        "repeat_note": null
+      },
+      {
+        "sys_min": 120.0,
+        "sys_max": 129.99,
+        "dia_max": 79.99,
+        "category": "elevated",
+        "severity": 1,
+        "message": "Blood pressure is in the elevated range on this test; confirm with a clinician.",
+        "repeat_note": "AHA recommends home blood pressure monitoring and lifestyle evaluation."
+      },
+      {
+        "sys_min": 130.0,
+        "sys_max": 139.99,
+        "dia_min": 80.0,
+        "dia_max": 89.99,
+        "category": "stage 1 hypertension range",
+        "severity": 2,
+        "message": "Blood pressure is in the stage 1 hypertension range on this test; confirm with a clinician.",
+        "repeat_note": "Confirm with repeat measurements across multiple clinical visits."
+      },
+      {
+        "sys_min": 140.0,
+        "dia_min": 90.0,
+        "category": "stage 2 hypertension range",
+        "severity": 3,
+        "message": "Blood pressure is in the stage 2 hypertension range on this test; confirm with a clinician.",
+        "repeat_note": "Physician evaluation advised for confirmation and cardiovascular risk management."
+      },
+      {
+        "sys_min": 180.0,
+        "dia_min": 120.0,
+        "category": "hypertensive crisis range",
+        "severity": 4,
+        "message": "Blood pressure is in the hypertensive crisis range on this test; confirm with a clinician.",
+        "repeat_note": "Emergency medical consultation advised if symptomatic."
+      }
+    ]
+  }
+}

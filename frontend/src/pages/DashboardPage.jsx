@@ -9,6 +9,7 @@ import {
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import { LabReportModal } from '../components/LabReportModal';
 
 export const DashboardPage = () => {
   const { user, logout } = useAuth();
@@ -46,6 +47,26 @@ export const DashboardPage = () => {
   const [hospitalsList, setHospitalsList] = useState([]);
   const [loadingHospitals, setLoadingHospitals] = useState(false);
 
+  // Lab Reports State
+  const [labReports, setLabReports] = useState([]);
+  const [loadingLabs, setLoadingLabs] = useState(false);
+  const [showLabModal, setShowLabModal] = useState(false);
+
+  // Fetch confirmed lab reports from backend GET /lab-reports
+  const fetchLabReports = async () => {
+    setLoadingLabs(true);
+    try {
+      const res = await api.get('/lab-reports');
+      if (res.data?.reports) {
+        setLabReports(res.data.reports);
+      }
+    } catch (e) {
+      console.warn('Could not fetch lab reports:', e);
+    } finally {
+      setLoadingLabs(false);
+    }
+  };
+
   // Fetch health score from backend GET /health-score
   const fetchHealthScore = async () => {
     try {
@@ -63,6 +84,7 @@ export const DashboardPage = () => {
     const fetchUserHistory = async () => {
       setLoadingHistory(true);
       fetchHealthScore();
+      fetchLabReports();
       try {
         const historyRes = await api.get('/history');
         if (historyRes.data && historyRes.data.length > 0) {
@@ -375,6 +397,7 @@ export const DashboardPage = () => {
               {[
                 { id: 'overview', label: 'Risk Overview', icon: Activity },
                 { id: 'trend', label: 'Risk Trajectory Trend', icon: TrendingUp },
+                { id: 'labs', label: 'Lab Reports & Trends', icon: FileText },
                 { id: 'shap', label: 'SHAP Explainability', icon: Sparkles },
                 { id: 'recommendations', label: 'Personalized Checklist', icon: FileText },
                 { id: 'chat', label: 'AI Health Chatbot', icon: MessageSquare },
@@ -1120,7 +1143,277 @@ export const DashboardPage = () => {
                 </div>
               </div>
             )}
+
+            {/* TAB: LAB REPORTS & TRENDS */}
+            {activeTab === 'labs' && (
+              <div className="space-y-8">
+                {/* Header Action Bar */}
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-heading text-xl font-bold text-slate-900">
+                      Clinical Lab Report Analysis &amp; Trends
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Rule-based clinical threshold findings aligned with ADA &amp; AHA guidelines, integrated with ML models.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowLabModal(true)}
+                    className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4" /> Upload New Lab Report
+                  </button>
+                </div>
+
+                {/* Explanatory Banner */}
+                <div className="p-3.5 bg-slate-100/90 border border-slate-200 rounded-2xl text-xs text-slate-700 text-center font-medium">
+                  <span className="font-bold text-slate-900">Core Principle:</span> Lab findings reflect direct biological measurements from your test against clinical thresholds. Model risk calculates statistical multi-year probability using machine learning.
+                </div>
+
+                {/* Disagreement Alert (if latest report flags it) */}
+                {labReports.length > 0 && labReports[0].report?.disagreement_flag && (
+                  <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                        Lab Findings &amp; Model Risk Divergence
+                      </h4>
+                      <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                        {labReports[0].report.disagreement_note}
+                      </p>
+                      <p className="text-[11px] text-amber-700 font-semibold mt-1">
+                        Direct laboratory measurements take precedence over statistical screening models.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Longitudinal Lab Trend Chart */}
+                {labReports.length > 0 ? (
+                  <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div>
+                        <h3 className="font-heading font-extrabold text-base text-slate-900">
+                          Biomarker Trajectory Trend (Glucose, Cholesterol &amp; HbA1c)
+                        </h3>
+                        <p className="text-xs text-slate-500">Historical trend across your confirmed lab reports</p>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs font-semibold">
+                        <span className="flex items-center gap-1.5 text-teal-600">
+                          <span className="w-2.5 h-2.5 rounded-full bg-teal-500"></span> Total Cholesterol
+                        </span>
+                        <span className="flex items-center gap-1.5 text-amber-600">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Fasting Glucose
+                        </span>
+                        <span className="flex items-center gap-1.5 text-rose-600">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> HbA1c (%)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="h-[280px] w-full pt-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={labReports
+                            .slice()
+                            .reverse()
+                            .map((r) => ({
+                              date: r.test_date || r.created_at?.split('T')[0],
+                              fastingGlucose: r.confirmed_values?.fasting_glucose,
+                              totalCholesterol: r.confirmed_values?.total_cholesterol,
+                              hba1c: r.confirmed_values?.hba1c
+                            }))}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                          <XAxis dataKey="date" stroke="#94A3B8" fontSize={11} tickLine={false} />
+                          <YAxis yAxisId="left" stroke="#94A3B8" fontSize={11} tickLine={false} domain={[50, 300]} />
+                          <YAxis yAxisId="right" orientation="right" stroke="#F43F5E" fontSize={11} tickLine={false} domain={[4, 12]} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '1rem', border: '1px solid #E2E8F0', fontSize: '12px' }}
+                          />
+                          <Line yAxisId="left" type="monotone" dataKey="totalCholesterol" name="Total Cholesterol (mg/dL)" stroke="#0D9488" strokeWidth={2.5} dot={{ r: 4 }} />
+                          <Line yAxisId="left" type="monotone" dataKey="fastingGlucose" name="Fasting Glucose (mg/dL)" stroke="#F59E0B" strokeWidth={2.5} dot={{ r: 4 }} />
+                          <Line yAxisId="right" type="monotone" dataKey="hba1c" name="HbA1c (%)" stroke="#E11D48" strokeWidth={2.5} dot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
+                    <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+                    <h3 className="text-sm font-bold text-slate-700">No Confirmed Lab Reports Yet</h3>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      Upload your first lab report or enter readings to view clinical findings, trend trajectories, and integrated model confidence.
+                    </p>
+                    <button
+                      onClick={() => setShowLabModal(true)}
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Upload Lab Report
+                    </button>
+                  </div>
+                )}
+
+                {/* Latest Lab Report Findings Details */}
+                {labReports.length > 0 && labReports[0].report?.findings && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Findings Card */}
+                    <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-3">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-teal-600" />
+                          <h3 className="font-heading font-extrabold text-sm text-slate-900">
+                            Latest Lab Findings (Test Date: {labReports[0].test_date})
+                          </h3>
+                        </div>
+                        <span className="text-[11px] font-semibold text-slate-500">
+                          {labReports[0].report.findings.length} Markers
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                        {labReports[0].report.findings.map((f, idx) => (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-xl border text-xs space-y-1 ${
+                              f.severity_level >= 3
+                                ? 'bg-rose-50/60 border-rose-200'
+                                : f.severity_level === 2
+                                ? 'bg-amber-50/60 border-amber-200'
+                                : 'bg-emerald-50/40 border-emerald-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-slate-900">{f.biomarker}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                  f.severity_level >= 3
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : f.severity_level === 2
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-100 text-emerald-800'
+                                }`}
+                              >
+                                {f.category}
+                              </span>
+                            </div>
+                            <div className="text-slate-800 font-medium">
+                              Measured: <span className="font-bold">{f.value} {f.unit}</span>
+                              {f.reference_range && (
+                                <span className="text-slate-400 text-[11px] ml-2">
+                                  (Ref: {f.reference_range})
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-slate-600 italic">"{f.message}"</p>
+                            {f.repeat_note && (
+                              <p className="text-[11px] text-amber-700 font-medium mt-1">
+                                Note: {f.repeat_note}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Integrated Model Risk Card */}
+                    <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-3">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <HeartPulse className="w-4 h-4 text-rose-600" />
+                          <h3 className="font-heading font-extrabold text-sm text-slate-900">
+                            Integrated Model Risk
+                          </h3>
+                        </div>
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">
+                          Tier: {labReports[0].report?.model_inputs?.confidence_tier || 'standard'}
+                        </span>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-800">Heart Disease Model (Logistic)</span>
+                          <span
+                            className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase ${
+                              labReports[0].model_risk?.heartDisease?.risk?.isHighRisk
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {labReports[0].model_risk?.heartDisease?.risk?.riskLevel || 'Low Risk'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          Probability:{' '}
+                          <span className="font-bold text-slate-900">
+                            {labReports[0].model_risk?.heartDisease?.risk?.probability
+                              ? (labReports[0].model_risk.heartDisease.risk.probability * 100).toFixed(1) + '%'
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Confidence Tier:{' '}
+                          <span className="font-semibold text-slate-800 capitalize">
+                            {labReports[0].report?.model_inputs?.confidence_tier || 'standard'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-800">Diabetes Model (XGBoost)</span>
+                          <span
+                            className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase ${
+                              labReports[0].model_risk?.diabetes?.risk?.isHighRisk
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {labReports[0].model_risk?.diabetes?.risk?.riskLevel || 'Low Risk'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          Probability:{' '}
+                          <span className="font-bold text-slate-900">
+                            {labReports[0].model_risk?.diabetes?.risk?.probability
+                              ? (labReports[0].model_risk.diabetes.risk.probability * 100).toFixed(1) + '%'
+                              : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          High Cholesterol Flag:{' '}
+                          <span className="font-semibold text-slate-800">
+                            {labReports[0].report?.model_inputs?.diabetes?.HighChol === 1.0 ? 'Yes (>= 240 mg/dL)' : 'No'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
+        )}
+
+        {/* Global Modal for Lab Report Upload / Confirmation */}
+        {showLabModal && (
+          <LabReportModal
+            isModal={true}
+            isOpen={showLabModal}
+            onClose={() => setShowLabModal(false)}
+            onConfirm={(vals, report, modelRisk) => {
+              setShowLabModal(false);
+              fetchLabReports();
+              if (modelRisk) {
+                setPredictionData((prev) => ({
+                  ...prev,
+                  results: modelRisk,
+                  diabetes: modelRisk.diabetes,
+                  heartDisease: modelRisk.heartDisease
+                }));
+              }
+            }}
+          />
         )}
       </main>
     </div>

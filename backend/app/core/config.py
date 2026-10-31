@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     GOOGLE_PLACES_API_KEY: str = ""
     GOOGLE_CLIENT_ID: str = ""
+    ENABLE_VISION_LLM_EXTRACTION: bool = False
 
     # ML Models Directory
     MODEL_DIR: str = ""

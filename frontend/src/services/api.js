@@ -43,35 +43,37 @@ api.interceptors.response.use(
 )
 
 // Lab Analysis API Service methods
-export const extractLabReport = async (file) => {
+export const uploadLabReport = async (file) => {
   const formData = new FormData()
   formData.append('file', file)
-  const res = await api.post('/labs/extract', formData, {
+  const res = await api.post('/lab-reports/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 30000,
   })
   return res.data
 }
 
-export const interpretBiomarkers = async (payload) => {
-  const res = await api.post('/labs/interpret', payload)
+export const confirmLabReportById = async (reportId, payload) => {
+  const res = await api.post(`/lab-reports/${reportId}/confirm`, payload)
   return res.data
 }
 
+export const listLabReports = async (page = 1, limit = 10) => {
+  const res = await api.get(`/lab-reports?page=${page}&limit=${limit}`)
+  return res.data
+}
+
+// Backwards-compatible aliases
+export const extractLabReport = uploadLabReport
 export const confirmLabReport = async (payload) => {
-  const res = await api.post('/labs/confirm', payload)
-  return res.data
+  const reportId = payload.id || 'draft'
+  return confirmLabReportById(reportId, payload)
 }
-
-export const getLatestLabReport = async () => {
-  const res = await api.get('/labs/latest')
-  return res.data
-}
-
 export const getLabReportsHistory = async (limit = 20) => {
-  const res = await api.get(`/labs/history?limit=${limit}`)
-  return res.data
+  const data = await listLabReports(1, limit)
+  return data.reports || []
 }
+
 
 export const predictRisk = async (payload) => {
   const res = await api.post('/predict', payload)

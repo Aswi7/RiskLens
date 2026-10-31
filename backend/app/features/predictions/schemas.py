@@ -44,7 +44,7 @@ class HealthIntakePayload(BaseModel):
     hdl: Optional[float] = Field(None, ge=5, le=250, description="HDL Cholesterol in mg/dl")
     triglycerides: Optional[float] = Field(None, ge=10, le=2500, description="Triglycerides in mg/dl")
     hba1c: Optional[float] = Field(None, ge=3.0, le=25.0, description="HbA1c in %")
-    confidenceTier: Optional[str] = Field(None, description="Tiered confidence rating: high, partial, screening")
+    confidenceTier: Optional[str] = Field(None, description="Tiered confidence rating: standard, partial, screening")
 
     model_config = ConfigDict(extra="allow", allow_inf_nan=False)
 

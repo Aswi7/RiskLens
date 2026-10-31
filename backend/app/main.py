@@ -62,6 +62,7 @@ app.include_router(predictions_router)
 app.include_router(llm_router)
 app.include_router(hospitals_router)
 app.include_router(health_router)
+app.include_router(labs_router, prefix="/lab-reports")
 app.include_router(labs_router, prefix="/labs")
 
 

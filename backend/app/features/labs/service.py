@@ -1,13 +1,33 @@
 import io
+import os
 import re
 import json
 import base64
 import logging
+import tempfile
+import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 import httpx
 from pypdf import PdfReader
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+
+try:
+    from PIL import Image, ImageOps, ImageFilter
+except ImportError:
+    Image = None
+    ImageOps = None
+    ImageFilter = None
+
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
 
 from app.core.config import settings
 from app.features.labs.schemas import (
@@ -21,14 +41,24 @@ from app.features.labs.schemas import (
 
 logger = logging.getLogger("risklens.labs")
 
-# PII Scrubbing regex patterns
+# Load configuration files once
+CONFIG_DIR = Path(__file__).resolve().parent
+
+with open(CONFIG_DIR / "analytes_config.json", "r", encoding="utf-8") as f:
+    ANALYTES_CONFIG = json.load(f)["analytes"]
+
+with open(CONFIG_DIR / "clinical_thresholds.json", "r", encoding="utf-8") as f:
+    THRESHOLDS_CONFIG = json.load(f)["thresholds"]
+
+
+# PII Scrubbing regex patterns (HIPAA 18 Identifiers)
 PII_PATTERNS = [
     (r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]"),  # SSN
     (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[REDACTED_EMAIL]"),
     (r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", "[REDACTED_PHONE]"),
     (r"\b(?:MRN|Account|Patient ID|Ref No|Record #)[\s:]*([A-Za-z0-9-]+)\b", r"MRN: [REDACTED_ID]"),
-    (r"(?:Patient Name|Name|Patient)[\s:]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", "Patient Name: [REDACTED_NAME]"),
-    (r"(?:DOB|Birth Date|Date of Birth)[\s:]+([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})", "DOB: [REDACTED_DOB]"),
+    (r"(?:Patient Name|Patient Full Name|Patient|Client Name|Member Name)[\s:]+([^\n\r]+)", "Patient: [REDACTED_NAME]"),
+    (r"(?:DOB|Birth Date|Date of Birth)[\s:]+([^\n\r]+)", "DOB: [REDACTED_DOB]"),
     (r"(?:Address)[\s:]+([^\n\r]+)", "Address: [REDACTED_ADDRESS]"),
 ]
 
@@ -43,653 +73,652 @@ def scrub_pii(text: str) -> str:
     return sanitized
 
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """Extracts raw text layer from digital PDF in-memory using pypdf."""
-    text_parts = []
+def verify_file_signature(file_bytes: bytes, filename: str) -> Tuple[bool, str, str]:
+    """
+    Validates file integrity using magic bytes signature, not just extension.
+    Allowed formats: PDF (%PDF-), PNG (\x89PNG), JPG (\xff\xd8\xff).
+    Returns (is_valid, mime_type, detected_format).
+    """
+    if not file_bytes or len(file_bytes) < 4:
+        return False, "", "unknown"
+
+    # PDF Magic bytes: %PDF- (0x25 0x50 0x44 0x46 0x2D)
+    if file_bytes.startswith(b"%PDF-"):
+        return True, "application/pdf", "PDF"
+
+    # PNG Magic bytes: \x89PNG\r\n\x1a\n
+    if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True, "image/png", "PNG"
+
+    # JPEG Magic bytes: \xff\xd8\xff
+    if file_bytes.startswith(b"\xff\xd8\xff"):
+        return True, "image/jpeg", "JPEG"
+
+    return False, "", "unsupported"
+
+
+def get_pdf_page_count(file_bytes: bytes) -> int:
+    """Determines page count of a PDF using PyMuPDF or pypdf."""
+    if fitz:
+        try:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            count = len(doc)
+            doc.close()
+            return count
+        except Exception:
+            pass
     try:
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        for page_idx, page in enumerate(reader.pages):
-            page_text = page.extract_text() or ""
-            if page_text.strip():
-                text_parts.append(page_text)
+        reader = PdfReader(io.BytesIO(file_bytes))
+        return len(reader.pages)
+    except Exception:
+        return 1
+
+
+def extract_text_layer_from_pdf(file_bytes: bytes) -> Tuple[str, int]:
+    """
+    Extracts text layer from digital PDF in-memory.
+    Returns (extracted_text, page_count).
+    """
+    text_parts = []
+    page_count = 1
+
+    # 1. Try PyMuPDF (fitz)
+    if fitz:
+        try:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            page_count = len(doc)
+            for page in doc:
+                t = page.get_text() or ""
+                if t.strip():
+                    text_parts.append(t)
+            doc.close()
+            if text_parts:
+                return "\n\n".join(text_parts), page_count
+        except Exception as e:
+            logger.warning(f"PyMuPDF text extraction failed: {e}")
+
+    # 2. Fallback to pypdf
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))
+        page_count = len(reader.pages)
+        for page in reader.pages:
+            t = page.extract_text() or ""
+            if t.strip():
+                text_parts.append(t)
     except Exception as e:
-        logger.warning(f"Failed to extract text from PDF via pypdf: {e}")
-    return "\n\n".join(text_parts)
+        logger.warning(f"pypdf text extraction failed: {e}")
+
+    return "\n\n".join(text_parts), page_count
 
 
-# Biomarker Aliases & Detection Specifications
-BIOMARKER_SPECS = [
-    {
-        "canonical_key": "total_cholesterol",
-        "name": "Total Cholesterol",
-        "unit": "mg/dL",
-        "aliases": [
-            r"total\s+cholesterol",
-            r"cholesterol[,\s]+total",
-            r"serum\s+cholesterol",
-            r"cholesterol\s+serum",
-            r"\bchol\b",
-            r"total\s+chol"
-        ],
-        "default_range": "< 200 mg/dL",
-        "min_valid": 40.0,
-        "max_valid": 700.0,
-        "is_cholesterol": True
-    },
-    {
-        "canonical_key": "ldl_cholesterol",
-        "name": "LDL Cholesterol",
-        "unit": "mg/dL",
-        "aliases": [
-            r"ldl\s+cholesterol",
-            r"ldl-c\b",
-            r"cholesterol[,\s]+ldl",
-            r"ldl\s+calculated",
-            r"direct\s+ldl",
-            r"\bldl\b"
-        ],
-        "default_range": "< 100 mg/dL",
-        "min_valid": 20.0,
-        "max_valid": 500.0,
-        "is_cholesterol": True
-    },
-    {
-        "canonical_key": "hdl_cholesterol",
-        "name": "HDL Cholesterol",
-        "unit": "mg/dL",
-        "aliases": [
-            r"hdl\s+cholesterol",
-            r"hdl-c\b",
-            r"cholesterol[,\s]+hdl",
-            r"direct\s+hdl",
-            r"\bhdl\b"
-        ],
-        "default_range": ">= 50 mg/dL",
-        "min_valid": 10.0,
-        "max_valid": 200.0,
-        "is_cholesterol": True
-    },
-    {
-        "canonical_key": "triglycerides",
-        "name": "Triglycerides",
-        "unit": "mg/dL",
-        "aliases": [
-            r"triglycerides?",
-            r"\btrig\b",
-            r"serum\s+triglycerides?"
-        ],
-        "default_range": "< 150 mg/dL",
-        "min_valid": 20.0,
-        "max_valid": 2000.0,
-        "is_cholesterol": False
-    },
-    {
-        "canonical_key": "fasting_glucose",
-        "name": "Fasting Blood Glucose",
-        "unit": "mg/dL",
-        "aliases": [
-            r"fasting\s+(?:blood\s+)?glucose",
-            r"glucose[,\s]+fasting",
-            r"\bfbs\b",
-            r"\bfbg\b",
-            r"fasting\s+plasma\s+glucose"
-        ],
-        "default_range": "70 - 99 mg/dL",
-        "min_valid": 30.0,
-        "max_valid": 600.0,
-        "is_glucose": True
-    },
-    {
-        "canonical_key": "random_glucose",
-        "name": "Blood Glucose",
-        "unit": "mg/dL",
-        "aliases": [
-            r"glucose[,\s]+serum",
-            r"plasma\s+glucose",
-            r"blood\s+glucose",
-            r"blood\s+sugar",
-            r"\brbs\b",
-            r"\bglucose\b"
-        ],
-        "default_range": "70 - 139 mg/dL",
-        "min_valid": 30.0,
-        "max_valid": 600.0,
-        "is_glucose": True
-    },
-    {
-        "canonical_key": "hba1c",
-        "name": "Hemoglobin A1c (HbA1c)",
-        "unit": "%",
-        "aliases": [
-            r"hemoglobin\s+a1c",
-            r"glycated\s+hemoglobin",
-            r"glycohemoglobin",
-            r"\bhba1c\b",
-            r"\ba1c\b"
-        ],
-        "default_range": "< 5.7 %",
-        "min_valid": 3.5,
-        "max_valid": 20.0,
-        "is_a1c": True
-    }
-]
+def preprocess_image_for_ocr(pil_img: Any) -> Any:
+    """Preprocesses an image for OCR: grayscale, contrast enhancement, and thresholding."""
+    if not Image or not pil_img:
+        return pil_img
+    try:
+        # Convert to grayscale
+        gray = pil_img.convert("L")
+        # Enhance contrast
+        gray = ImageOps.autocontrast(gray)
+        # Apply slight sharpening
+        sharpened = gray.filter(ImageFilter.SHARPEN)
+        return sharpened
+    except Exception as e:
+        logger.warning(f"Image preprocessing warning: {e}")
+        return pil_img
 
 
-def extract_blood_pressure_from_text(text: str) -> Tuple[Optional[float], Optional[float]]:
-    """Extracts systolic and diastolic blood pressure pairs like 120/80 mmHg."""
-    # Look for patterns like "120/80", "120 / 80 mmHg", "BP: 130/85"
+def ocr_rasterized_pdf(file_bytes: bytes) -> str:
+    """
+    Rasterises PDF pages and executes OCR using Tesseract when digital text layer is missing.
+    """
+    if not fitz or not pytesseract or not Image:
+        return ""
+
+    ocr_text_parts = []
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        for page_idx, page in enumerate(doc):
+            # Render page to an image pixmap at 200 DPI
+            pix = page.get_pixmap(dpi=200)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            processed = preprocess_image_for_ocr(img)
+            text = pytesseract.image_to_string(processed)
+            if text.strip():
+                ocr_text_parts.append(text)
+        doc.close()
+    except Exception as e:
+        logger.warning(f"Tesseract PDF OCR execution encountered issue: {e}")
+
+    return "\n\n".join(ocr_text_parts)
+
+
+def ocr_image_file(file_bytes: bytes) -> str:
+    """Executes OCR on an uploaded image file (PNG / JPG)."""
+    if not pytesseract or not Image:
+        return ""
+    try:
+        img = Image.open(io.BytesIO(file_bytes))
+        processed = preprocess_image_for_ocr(img)
+        text = pytesseract.image_to_string(processed)
+        return text
+    except Exception as e:
+        logger.warning(f"Tesseract image OCR execution issue: {e}")
+        return ""
+
+
+def extract_blood_pressure(text: str) -> Tuple[Optional[float], Optional[float], Optional[str], str]:
+    """
+    Extracts blood pressure pair (systolic/diastolic) from text.
+    Returns (sys, dia, snippet, confidence).
+    """
     bp_match = re.search(r"(?:BP|Blood\s+Pressure)?[^\w\n\r]*(\d{2,3})\s*[/]\s*(\d{2,3})\s*(?:mm\s*hg)?", text, re.IGNORECASE)
     if bp_match:
         sys_val = float(bp_match.group(1))
         dia_val = float(bp_match.group(2))
-        if 60 <= sys_val <= 260 and 40 <= dia_val <= 160:
-            return sys_val, dia_val
-    return None, None
+        if 50 <= sys_val <= 280 and 30 <= dia_val <= 180:
+            snippet = bp_match.group(0).strip()
+            return sys_val, dia_val, snippet, "high"
+    return None, None, None, "low"
 
 
-def extract_biomarkers_from_text(raw_text: str) -> Dict[str, ExtractedBiomarkerItem]:
+def extract_biomarkers_rule_based(
+    raw_text: str,
+    source_confidence: str = "high"
+) -> Tuple[Dict[str, ExtractedBiomarkerItem], bool]:
     """
-    High-precision regex parser for clinical lab reports.
-    Extracts markers, detects units, auto-converts mmol/L to mg/dL, and extracts reference intervals.
+    Extracts lab biomarkers according to analytes_config.json:
+    - Analyte synonyms matching
+    - Canonical unit normalisation (converting mmol/L, mmol/mol)
+    - Plausible range validation
+    - High/Low clinical flag detection
+    - Glucose distinction: fasting vs random vs postprandial vs unknown
+
+    Returns (detected_markers, unclear_glucose_flag).
     """
     clean_text = scrub_pii(raw_text)
     detected: Dict[str, ExtractedBiomarkerItem] = {}
+    unclear_glucose = False
 
-    # 1. First look for Blood Pressure pair
-    sys_val, dia_val = extract_blood_pressure_from_text(clean_text)
-    if sys_val is not None:
+    # 1. Blood Pressure pair extraction
+    sys_bp, dia_bp, bp_snippet, bp_conf = extract_blood_pressure(clean_text)
+    if sys_bp is not None and dia_bp is not None:
         detected["bp_systolic"] = ExtractedBiomarkerItem(
             name="Systolic Blood Pressure",
             canonical_key="bp_systolic",
-            value=sys_val,
+            value=sys_bp,
             unit="mmHg",
             reference_range="< 120 mmHg",
-            confidence="high",
-            source_snippet=f"{int(sys_val)}/{int(dia_val)} mmHg"
+            confidence=source_confidence if source_confidence == "high" else "medium",
+            source_snippet=bp_snippet
         )
         detected["bp_diastolic"] = ExtractedBiomarkerItem(
             name="Diastolic Blood Pressure",
             canonical_key="bp_diastolic",
-            value=dia_val,
+            value=dia_bp,
             unit="mmHg",
             reference_range="< 80 mmHg",
-            confidence="high",
-            source_snippet=f"{int(sys_val)}/{int(dia_val)} mmHg"
+            confidence=source_confidence if source_confidence == "high" else "medium",
+            source_snippet=bp_snippet
         )
 
     lines = clean_text.splitlines()
 
-    for spec in BIOMARKER_SPECS:
+    for spec in ANALYTES_CONFIG:
         key = spec["canonical_key"]
+        # Skip blood pressure individual searches if already extracted as pair
+        if key in ("bp_systolic", "bp_diastolic") and key in detected:
+            continue
         if key in detected:
             continue
 
-        for alias in spec["aliases"]:
-            pattern = rf"(?:{alias})[^\w\n\r]*[:\t -]*([0-9]+(?:\.[0-9]+)?)\s*(mg/dl|mmol/l|%|g/dl|mg/l)?"
+        for syn in spec["synonyms"]:
+            # Pattern matches analyte name, value, optional unit, and optional H/L flag
+            pattern = rf"(?:{syn})[^\w\n\r]*[:\t -]*([0-9]+(?:\.[0-9]+)?)\s*(mg/dl|mmol/l|mmol/mol|%|g/dl|mg/l)?\s*([HL]|HIGH|LOW|ABNORMAL|\*|▲|▼)?"
             found = False
 
             for line in lines:
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
                     val_str = match.group(1)
-                    unit_str = match.group(2) or spec["unit"]
+                    unit_str = (match.group(2) or spec["canonical_unit"]).strip()
+                    flag_str = match.group(3).strip() if match.group(3) else None
                     val = float(val_str)
 
-                    # Check for mmol/L unit conversion:
-                    # 1 mmol/L of cholesterol = 38.67 mg/dL
-                    # 1 mmol/L of glucose = 18.0182 mg/dL
-                    is_mmol = "mmol" in unit_str.lower() or (val < 15.0 and spec.get("is_cholesterol"))
-                    if is_mmol and spec.get("is_cholesterol"):
-                        val = round(val * 38.67, 1)
-                        unit_str = "mg/dL"
-                    elif is_mmol and spec.get("is_glucose"):
-                        val = round(val * 18.0182, 1)
+                    # --- UNIT CONVERSION LOGIC ---
+                    unit_lower = unit_str.lower()
+
+                    # Glucose conversion: mmol/L x 18.0 = mg/dL
+                    if "glucose" in key and "mmol" in unit_lower:
+                        val = round(val * 18.0, 1)
                         unit_str = "mg/dL"
 
-                    # Range validation sanity check
-                    if spec["min_valid"] <= val <= spec["max_valid"]:
-                        detected[key] = ExtractedBiomarkerItem(
-                            name=spec["name"],
-                            canonical_key=key,
-                            value=val,
-                            unit=unit_str,
-                            reference_range=spec["default_range"],
-                            confidence="high",
-                            source_snippet=line.strip()[:100]
-                        )
-                        found = True
-                        break
+                    # Cholesterol (Total, LDL, HDL) conversion: mmol/L x 38.67 = mg/dL
+                    elif ("cholesterol" in key or key in ("total_cholesterol", "ldl_cholesterol", "hdl_cholesterol")) and "mmol" in unit_lower:
+                        val = round(val * 38.67, 1)
+                        unit_str = "mg/dL"
+
+                    # Triglycerides conversion: mmol/L x 88.57 = mg/dL
+                    elif "triglycerides" in key and "mmol" in unit_lower:
+                        val = round(val * 88.57, 1)
+                        unit_str = "mg/dL"
+
+                    # HbA1c conversion: mmol/mol to % = 0.0915 * value + 2.15
+                    elif key == "hba1c" and "mmol/mol" in unit_lower:
+                        val = round(0.0915 * val + 2.15, 2)
+                        unit_str = "%"
+
+                    # Plausible Range Filter: Discard OCR artifacts / invalid numbers
+                    min_valid, max_valid = spec["plausible_range"]
+                    if not (min_valid <= val <= max_valid):
+                        continue
+
+                    # Reference Range Extraction from Line (e.g. "Reference: 70-99", "Normal: <200")
+                    ref_match = re.search(r"(?:Ref(?:erence)?|Normal|Desirable)[^\w\n\r]*[:\t ]*([<>=0-9 -]+(?:\.[0-9]+)?\s*(?:mg/dl|%|mmol/l)?)", line, re.IGNORECASE)
+                    ref_range = ref_match.group(1).strip() if ref_match else None
+
+                    # Confidence determination
+                    item_conf = source_confidence
+                    if key == "unknown_glucose":
+                        item_conf = "low"
+                        unclear_glucose = True
+
+                    detected[key] = ExtractedBiomarkerItem(
+                        name=spec["name"],
+                        canonical_key=key,
+                        value=val,
+                        unit=unit_str,
+                        reference_range=ref_range,
+                        flag=flag_str,
+                        confidence=item_conf,
+                        source_snippet=line.strip()[:100],
+                        glucose_type=spec.get("glucose_type")
+                    )
+                    found = True
+                    break
+
             if found:
                 break
 
-    # If fasting glucose was not detected, but random glucose was, use that as glucose indicator
-    if "fasting_glucose" not in detected and "random_glucose" in detected:
-        g = detected["random_glucose"]
-        detected["fasting_glucose"] = ExtractedBiomarkerItem(
-            name="Fasting Blood Glucose",
-            canonical_key="fasting_glucose",
-            value=g.value,
-            unit=g.unit,
-            reference_range="70 - 99 mg/dL",
-            confidence="medium",
-            source_snippet=f"{g.source_snippet} (Inferred from general glucose)"
-        )
+    # If unknown_glucose was detected, and neither fasting nor random was specifically identified:
+    if "unknown_glucose" in detected and "fasting_glucose" not in detected and "random_glucose" not in detected:
+        unclear_glucose = True
 
-    return detected
+    return detected, unclear_glucose
 
 
-async def extract_via_vision_llm(image_bytes: bytes, mime_type: str) -> Dict[str, ExtractedBiomarkerItem]:
+async def extract_via_vision_llm_grounded(
+    image_bytes: bytes,
+    mime_type: str,
+    raw_ocr_text: str = ""
+) -> Dict[str, ExtractedBiomarkerItem]:
     """
-    Uses Gemini Vision or OpenAI Vision when digital PDF text extraction is not feasible (e.g. photos, scans).
-    Returns structured JSON of extracted biomarkers.
+    Optional fallback behind settings.ENABLE_VISION_LLM_EXTRACTION.
+    Returns JSON from Gemini Vision / OpenAI Vision at temperature 0.
+    Strict Grounding Check: Every returned number must appear verbatim in the source image or OCR text;
+    otherwise it is discarded.
     """
-    detected: Dict[str, ExtractedBiomarkerItem] = {}
+    if not settings.ENABLE_VISION_LLM_EXTRACTION:
+        return {}
+
     gemini_key = settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
     openai_key = settings.OPENAI_API_KEY
 
-    prompt_instruction = """Extract clinical lab values from this medical lab report image.
-Return valid JSON ONLY matching this schema:
+    prompt_instruction = """Extract clinical lab values from this lab report image.
+Return valid JSON ONLY matching this exact structure:
 {
+  "fasting_glucose": number or null,
+  "random_glucose": number or null,
+  "postprandial_glucose": number or null,
+  "hba1c": number or null,
+  "total_cholesterol": number or null,
+  "ldl_cholesterol": number or null,
+  "hdl_cholesterol": number or null,
+  "triglycerides": number or null,
   "bp_systolic": number or null,
-  "bp_diastolic": number or null,
-  "total_cholesterol": number (in mg/dL) or null,
-  "ldl_cholesterol": number (in mg/dL) or null,
-  "hdl_cholesterol": number (in mg/dL) or null,
-  "triglycerides": number (in mg/dL) or null,
-  "fasting_glucose": number (in mg/dL) or null,
-  "random_glucose": number (in mg/dL) or null,
-  "hba1c": number (in %) or null
+  "bp_diastolic": number or null
 }
-If values are in mmol/L, convert them to mg/dL before returning.
-Never output markdown backticks or commentary, only raw JSON.
-"""
+Ensure all values are in canonical units (mg/dL for lipids and glucose, % for HbA1c, mmHg for BP).
+Output JSON only. Do not add explanations."""
 
-    # 1. Gemini Vision API
-    if gemini_key:
-        try:
-            b64_img = base64.b64encode(image_bytes).decode("utf-8")
+    detected: Dict[str, ExtractedBiomarkerItem] = {}
+
+    try:
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+        parsed_json: Dict[str, Any] = {}
+
+        if gemini_key:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
             payload = {
                 "contents": [
                     {
                         "parts": [
                             {"text": prompt_instruction},
-                            {
-                                "inline_data": {
-                                    "mime_type": mime_type if mime_type.startswith("image/") else "image/png",
-                                    "data": b64_img
-                                }
-                            }
+                            {"inline_data": {"mime_type": mime_type, "data": b64_img}}
                         ]
                     }
                 ],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "response_mime_type": "application/json"
-                }
+                "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
             }
             async with httpx.AsyncClient(timeout=25.0) as client:
                 res = await client.post(url, json=payload)
                 if res.status_code == 200:
-                    data = res.json()
-                    raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    parsed = json.loads(raw_text)
-                    for k, v in parsed.items():
-                        if v is not None and isinstance(v, (int, float)):
-                            detected[k] = ExtractedBiomarkerItem(
-                                name=k.replace("_", " ").title(),
-                                canonical_key=k,
-                                value=float(v),
-                                unit="%" if k == "hba1c" else "mmHg" if "bp_" in k else "mg/dL",
-                                confidence="high",
-                                source_snippet="Extracted via Gemini Vision OCR"
-                            )
-                    return detected
-        except Exception as e:
-            logger.warning(f"Gemini Vision extraction failed: {e}")
-
-    # 2. OpenAI Vision API
-    elif openai_key:
-        try:
-            b64_img = base64.b64encode(image_bytes).decode("utf-8")
+                    text_out = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed_json = json.loads(text_out)
+        elif openai_key:
             url = "https://api.openai.com/v1/chat/completions"
             headers = {"Authorization": f"Bearer {openai_key}"}
             payload = {
                 "model": "gpt-4o-mini",
+                "temperature": 0.0,
+                "response_format": {"type": "json_object"},
                 "messages": [
                     {
                         "role": "user",
                         "content": [
                             {"type": "text", "text": prompt_instruction},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}
-                            }
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}}
                         ]
                     }
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.1
+                ]
             }
             async with httpx.AsyncClient(timeout=25.0) as client:
                 res = await client.post(url, json=payload, headers=headers)
                 if res.status_code == 200:
-                    data = res.json()
-                    parsed = json.loads(data["choices"][0]["message"]["content"])
-                    for k, v in parsed.items():
-                        if v is not None and isinstance(v, (int, float)):
-                            detected[k] = ExtractedBiomarkerItem(
-                                name=k.replace("_", " ").title(),
-                                canonical_key=k,
-                                value=float(v),
-                                unit="%" if k == "hba1c" else "mmHg" if "bp_" in k else "mg/dL",
-                                confidence="high",
-                                source_snippet="Extracted via OpenAI Vision OCR"
-                            )
-                    return detected
-        except Exception as e:
-            logger.warning(f"OpenAI Vision extraction failed: {e}")
+                    text_out = res.json()["choices"][0]["message"]["content"]
+                    parsed_json = json.loads(text_out)
+
+        # STRICT GROUNDING VERIFICATION:
+        # Every returned number must appear verbatim in the source OCR text layer if text is available
+        for k, v in parsed_json.items():
+            if v is not None and isinstance(v, (int, float)):
+                val_float = float(v)
+                val_int = int(val_float)
+                # If raw OCR text is present, verify grounding
+                if raw_ocr_text:
+                    if str(val_float) not in raw_ocr_text and str(val_int) not in raw_ocr_text:
+                        logger.warning(f"Discarding ungrounded LLM extracted value: {k}={v}")
+                        continue
+
+                unit = "%" if k == "hba1c" else ("mmHg" if "bp_" in k else "mg/dL")
+                detected[k] = ExtractedBiomarkerItem(
+                    name=k.replace("_", " ").title(),
+                    canonical_key=k,
+                    value=val_float,
+                    unit=unit,
+                    confidence="medium",
+                    source_snippet="Extracted via grounded Vision LLM fallback"
+                )
+    except Exception as e:
+        logger.warning(f"Vision LLM extraction fallback encountered an error: {e}")
 
     return detected
 
 
-async def parse_lab_file(file_bytes: bytes, filename: str, content_type: str) -> LabExtractionResponse:
+def process_lab_document_in_memory(
+    file_bytes: bytes,
+    filename: str,
+    mime_type: str,
+    draft_id: str
+) -> LabExtractionResponse:
     """
-    Processes an uploaded lab document in-memory (zero-disk persistence).
-    Attempts PDF digital layer text extraction first; falls back to Vision LLM for images/scans.
+    Synchronous extraction pipeline designed to run in a worker thread (asyncio.to_thread).
+    Zero disk retention: memory is released immediately after extraction.
     """
-    detected_markers: Dict[str, ExtractedBiomarkerItem] = {}
-    is_pdf = filename.lower().endswith(".pdf") or "pdf" in content_type.lower()
+    is_pdf = mime_type == "application/pdf"
+    extracted_text = ""
+    page_count = 1
+    source_conf = "high"
 
+    # Step 1: Text Acquisition
     if is_pdf:
-        pdf_text = extract_text_from_pdf(file_bytes)
-        if len(pdf_text.strip()) > 30:
-            detected_markers = extract_biomarkers_from_text(pdf_text)
+        extracted_text, page_count = extract_text_layer_from_pdf(file_bytes)
+        # If text layer is too short (< 30 characters), document is scanned/rasterized
+        if len(extracted_text.strip()) < 30:
+            logger.info("PDF text layer is empty or scanned; rasterising for OCR...")
+            extracted_text = ocr_rasterized_pdf(file_bytes)
+            source_conf = "medium"
+    else:
+        # Uploaded as Image (PNG/JPG)
+        extracted_text = ocr_image_file(file_bytes)
+        source_conf = "medium"
 
-    # If digital PDF had no text (scanned image) or if uploaded file is an image:
-    if not detected_markers and (not is_pdf or len(detected_markers) == 0):
-        mime = content_type if content_type else ("application/pdf" if is_pdf else "image/jpeg")
-        detected_markers = await extract_via_vision_llm(file_bytes, mime)
+    # Step 2: Rule-Based Extraction
+    detected_markers, unclear_glucose = extract_biomarkers_rule_based(extracted_text, source_confidence=source_conf)
 
-    status = "success" if len(detected_markers) >= 2 else ("partial" if len(detected_markers) == 1 else "no_markers_found")
+    # Step 3: Optional Vision LLM Fallback (if enabled and markers are sparse)
+    if not detected_markers and settings.ENABLE_VISION_LLM_EXTRACTION:
+        logger.info("Attempting Vision LLM fallback extraction...")
+        # Run vision LLM extraction synchronously
+        loop = asyncio.new_event_loop()
+        try:
+            detected_markers = loop.run_until_complete(
+                extract_via_vision_llm_grounded(file_bytes, mime_type, raw_ocr_text=extracted_text)
+            )
+        finally:
+            loop.close()
+
+    status_str = "success" if len(detected_markers) >= 2 else ("partial" if len(detected_markers) == 1 else "no_markers_found")
     message = (
-        f"Successfully extracted {len(detected_markers)} clinical biomarker(s)."
-        if len(detected_markers) > 0
-        else "No recognized clinical lab biomarkers detected in the document. Please check the document or input values manually."
+        f"Extracted {len(detected_markers)} biomarker(s). Please review and confirm your readings in the table below."
+        if detected_markers
+        else "No recognized clinical lab biomarkers detected. You can enter your values manually below."
     )
 
     return LabExtractionResponse(
+        id=draft_id,
         filename=filename,
         file_type="PDF" if is_pdf else "Image",
+        page_count=page_count,
         detected_markers=detected_markers,
+        unclear_glucose_flag=unclear_glucose,
         phi_redacted=True,
-        status=status,
+        status=status_str,
         message=message
     )
 
 
 # ==============================================================================
-# CLINICAL INTERPRETATION RULE ENGINE (AHA / ACC / ADA / NCEP ATP III)
+# CLINICAL INTERPRETATION RULE ENGINE (ADA / AHA / ACC / NCEP)
 # ==============================================================================
-def evaluate_clinical_findings(payload: BiomarkerConfirmationPayload) -> LabFindingsReport:
+def evaluate_clinical_findings(payload: BiomarkerConfirmationPayload, user_sex: Optional[int] = 1) -> LabFindingsReport:
     """
-    Evaluates confirmed lab biomarker measurements using evidence-based clinical practice guidelines.
-    Returns structured clinical findings, severity ratings, and model input feature mappings.
+    Evaluates confirmed lab biomarker measurements using clinical_thresholds.json.
+    Adheres strictly to the principle:
+    - Never diagnose.
+    - Standardized phrasing: "in the X range on this test; confirm with a clinician".
+    - Includes repeat testing note where relevant.
     """
     findings: List[ClinicalFindingItem] = []
     max_severity = 1
 
-    # 1. Total Cholesterol (NCEP ATP III / AHA)
-    if payload.total_cholesterol is not None:
-        val = payload.total_cholesterol
-        if val < 200:
-            status = "optimal"
-            sev = 1
-            rec = "Maintain heart-healthy Mediterranean or DASH dietary pattern and regular cardiovascular exercise."
-            note = f"Total cholesterol of {val} mg/dL is within the desirable, optimal cardiovascular range (<200 mg/dL)."
-        elif 200 <= val < 240:
-            status = "borderline"
-            sev = 2
-            rec = "Consider reducing saturated and trans-fat intake, increasing soluble fiber, and retesting in 6 months."
-            note = f"Total cholesterol of {val} mg/dL is borderline elevated (200-239 mg/dL), representing mild atherogenic risk."
-        else:
-            status = "elevated"
-            sev = 3
-            rec = "Consult your physician for a comprehensive fasting lipid panel and cardiovascular risk assessment."
-            note = f"Total cholesterol of {val} mg/dL is high (≥240 mg/dL), associated with increased risk of coronary artery disease."
-        max_severity = max(max_severity, sev)
-        findings.append(ClinicalFindingItem(
-            biomarker="Total Cholesterol",
-            canonical_key="total_cholesterol",
-            value=val,
-            unit="mg/dL",
-            status=status,
-            severity_level=sev,
-            reference_range="< 200 mg/dL",
-            clinical_finding=note,
-            recommendation=rec
-        ))
-
-    # 2. LDL Cholesterol (AHA/ACC)
-    if payload.ldl_cholesterol is not None:
-        val = payload.ldl_cholesterol
-        if val < 100:
-            status, sev = "optimal", 1
-            note = f"LDL cholesterol of {val} mg/dL is optimal (<100 mg/dL)."
-            rec = "Continue cardioprotective lifestyle habits."
-        elif 100 <= val < 130:
-            status, sev = "normal", 1
-            note = f"LDL cholesterol of {val} mg/dL is near optimal (100-129 mg/dL)."
-            rec = "Maintain physical activity and balanced nutritional choices."
-        elif 130 <= val < 160:
-            status, sev = "borderline", 2
-            note = f"LDL cholesterol of {val} mg/dL is borderline high (130-159 mg/dL)."
-            rec = "Prioritize whole grains, leafy greens, and plant sterols to curb LDL oxidation."
-        elif 160 <= val < 190:
-            status, sev = "elevated", 3
-            note = f"LDL cholesterol of {val} mg/dL is high (160-189 mg/dL), elevating atherosclerotic plaque vulnerability."
-            rec = "Discuss clinical lipid-lowering strategies and cardiovascular risk factors with your doctor."
-        else:
-            status, sev = "critical", 4
-            note = f"LDL cholesterol of {val} mg/dL is very high (≥190 mg/dL), a key clinical indicator for ASCVD."
-            rec = "Prompt medical evaluation recommended by American College of Cardiology guidelines."
-        max_severity = max(max_severity, sev)
-        findings.append(ClinicalFindingItem(
-            biomarker="LDL Cholesterol (Calculated/Direct)",
-            canonical_key="ldl_cholesterol",
-            value=val,
-            unit="mg/dL",
-            status=status,
-            severity_level=sev,
-            reference_range="< 100 mg/dL",
-            clinical_finding=note,
-            recommendation=rec
-        ))
-
-    # 3. HDL Cholesterol (Cardioprotective Marker)
-    if payload.hdl_cholesterol is not None:
-        val = payload.hdl_cholesterol
-        if val >= 60:
-            status, sev = "optimal", 1
-            note = f"HDL cholesterol of {val} mg/dL is optimal and cardioprotective (≥60 mg/dL)."
-            rec = "Protective HDL levels assist in reverse cholesterol transport from peripheral tissues."
-        elif 40 <= val < 60:
-            status, sev = "normal", 1
-            note = f"HDL cholesterol of {val} mg/dL is within acceptable reference range (40-59 mg/dL)."
-            rec = "Aerobic exercise, healthy fats (olive oil, nuts), and smoking avoidance help preserve HDL."
-        else:
-            status, sev = "elevated", 3  # High risk indicator
-            note = f"HDL cholesterol of {val} mg/dL is low (<40 mg/dL), which constitutes an independent cardiovascular risk factor."
-            rec = "Engage in regular moderate-to-vigorous aerobic exercise and minimize refined carbohydrate intake."
-        max_severity = max(max_severity, sev)
-        findings.append(ClinicalFindingItem(
-            biomarker="HDL Cholesterol",
-            canonical_key="hdl_cholesterol",
-            value=val,
-            unit="mg/dL",
-            status=status,
-            severity_level=sev,
-            reference_range="≥ 50 mg/dL",
-            clinical_finding=note,
-            recommendation=rec
-        ))
-
-    # 4. Triglycerides (AHA Guidelines)
-    if payload.triglycerides is not None:
-        val = payload.triglycerides
-        if val < 150:
-            status, sev = "optimal", 1
-            note = f"Triglycerides level of {val} mg/dL is normal (<150 mg/dL)."
-            rec = "Maintain healthy weight and moderate carbohydrate intake."
-        elif 150 <= val < 200:
-            status, sev = "borderline", 2
-            note = f"Triglycerides of {val} mg/dL are borderline elevated (150-199 mg/dL)."
-            rec = "Reduce added sugars, refined starches, and alcohol consumption."
-        elif 200 <= val < 500:
-            status, sev = "elevated", 3
-            note = f"Triglycerides of {val} mg/dL are high (200-499 mg/dL)."
-            rec = "Physician consultation recommended to assess metabolic syndrome and cardiovascular risk."
-        else:
-            status, sev = "critical", 4
-            note = f"Triglycerides of {val} mg/dL are very high (≥500 mg/dL), carrying risk of acute pancreatitis."
-            rec = "Immediate medical evaluation recommended."
-        max_severity = max(max_severity, sev)
-        findings.append(ClinicalFindingItem(
-            biomarker="Triglycerides",
-            canonical_key="triglycerides",
-            value=val,
-            unit="mg/dL",
-            status=status,
-            severity_level=sev,
-            reference_range="< 150 mg/dL",
-            clinical_finding=note,
-            recommendation=rec
-        ))
-
-    # 5. Triglyceride / HDL Ratio (Cardiovascular Atherogenicity & Insulin Resistance Marker)
-    if payload.triglycerides is not None and payload.hdl_cholesterol is not None and payload.hdl_cholesterol > 0:
-        ratio = round(payload.triglycerides / payload.hdl_cholesterol, 2)
-        if ratio < 2.0:
-            status, sev = "optimal", 1
-            note = f"Triglyceride/HDL ratio of {ratio} is favorable (<2.0), suggesting low small dense LDL particles."
-            rec = "Keep up current diet and exercise routine."
-        elif 2.0 <= ratio < 3.5:
-            status, sev = "normal", 1
-            note = f"Triglyceride/HDL ratio of {ratio} is moderate."
-            rec = "Maintain consistent weekly aerobic physical activity."
-        else:
-            status, sev = "elevated", 3
-            note = f"Triglyceride/HDL ratio of {ratio} is elevated (≥3.5), strongly correlated with insulin resistance and atherogenic dyslipidemia."
-            rec = "Discuss metabolic syndrome screening and dietary carbohydrate refinement with a clinician."
-        max_severity = max(max_severity, sev)
-        findings.append(ClinicalFindingItem(
-            biomarker="Triglyceride-to-HDL Ratio",
-            canonical_key="trig_hdl_ratio",
-            value=ratio,
-            unit="ratio",
-            status=status,
-            severity_level=sev,
-            reference_range="< 2.5",
-            clinical_finding=note,
-            recommendation=rec
-        ))
-
-    # 6. Fasting Blood Glucose (ADA Standards of Care)
+    # 1. Fasting Glucose (ADA Standards of Care)
     if payload.fasting_glucose is not None:
         val = payload.fasting_glucose
-        if val < 100:
-            status, sev = "optimal", 1
-            note = f"Fasting blood glucose of {val} mg/dL is in the normal healthy range (70-99 mg/dL)."
-            rec = "Maintain balanced low-glycemic dietary choices."
-        elif 100 <= val < 126:
-            status, sev = "borderline", 2
-            note = f"Fasting glucose of {val} mg/dL falls into the Impaired Fasting Glucose / Prediabetes category (100-125 mg/dL)."
-            rec = "Structured lifestyle interventions (150 mins/week exercise, 5-7% weight reduction) can prevent progression to type 2 diabetes."
-        else:
-            status, sev = "elevated", 3
-            note = f"Fasting glucose of {val} mg/dL is above the clinical diabetes diagnostic threshold (≥126 mg/dL)."
-            rec = "Formal diagnostic confirmation with an HbA1c test and physician consultation is advised."
-        max_severity = max(max_severity, sev)
-        findings.append(ClinicalFindingItem(
-            biomarker="Fasting Blood Glucose",
-            canonical_key="fasting_glucose",
-            value=val,
-            unit="mg/dL",
-            status=status,
-            severity_level=sev,
-            reference_range="70 - 99 mg/dL",
-            clinical_finding=note,
-            recommendation=rec
-        ))
+        matched_rule = None
+        for rule in THRESHOLDS_CONFIG.get("fasting_glucose", []):
+            min_v = rule.get("min", -float("inf"))
+            max_v = rule.get("max", float("inf"))
+            if min_v <= val <= max_v:
+                matched_rule = rule
+                break
+        if matched_rule:
+            findings.append(ClinicalFindingItem(
+                biomarker="Fasting Blood Glucose",
+                canonical_key="fasting_glucose",
+                value=val,
+                unit="mg/dL",
+                category=matched_rule["category"],
+                severity_level=matched_rule["severity"],
+                message=matched_rule["message"],
+                repeat_note=matched_rule.get("repeat_note"),
+                reference_range="< 100 mg/dL"
+            ))
+            max_severity = max(max_severity, matched_rule["severity"])
 
-    # 7. Hemoglobin A1c (HbA1c)
+    # 2. HbA1c (ADA Standards of Care)
     if payload.hba1c is not None:
         val = payload.hba1c
-        if val < 5.7:
-            status, sev = "optimal", 1
-            note = f"HbA1c of {val}% reflects normal 3-month average blood glucose regulation (<5.7%)."
-            rec = "Continue healthy balanced nutrition."
-        elif 5.7 <= val < 6.5:
-            status, sev = "borderline", 2
-            note = f"HbA1c of {val}% falls within the prediabetes range (5.7% - 6.4%)."
-            rec = "Focus on glycemic control, whole foods, strength training, and periodic 6-month retesting."
-        else:
-            status, sev = "elevated", 3
-            note = f"HbA1c of {val}% meets or exceeds the type 2 diabetes clinical threshold (≥6.5%)."
-            rec = "Schedule an appointment with an endocrinologist or primary care physician for diabetes management."
-        max_severity = max(max_severity, sev)
-        findings.append(ClinicalFindingItem(
-            biomarker="Hemoglobin A1c (HbA1c)",
-            canonical_key="hba1c",
-            value=val,
-            unit="%",
-            status=status,
-            severity_level=sev,
-            reference_range="< 5.7 %",
-            clinical_finding=note,
-            recommendation=rec
-        ))
+        matched_rule = None
+        for rule in THRESHOLDS_CONFIG.get("hba1c", []):
+            min_v = rule.get("min", -float("inf"))
+            max_v = rule.get("max", float("inf"))
+            if min_v <= val <= max_v:
+                matched_rule = rule
+                break
+        if matched_rule:
+            findings.append(ClinicalFindingItem(
+                biomarker="Hemoglobin A1c (HbA1c)",
+                canonical_key="hba1c",
+                value=val,
+                unit="%",
+                category=matched_rule["category"],
+                severity_level=matched_rule["severity"],
+                message=matched_rule["message"],
+                repeat_note=matched_rule.get("repeat_note"),
+                reference_range="< 5.7 %"
+            ))
+            max_severity = max(max_severity, matched_rule["severity"])
 
-    # 8. Blood Pressure (AHA/ACC 2017 Guidelines)
+    # 3. Total Cholesterol (ACC/AHA Guidelines)
+    if payload.total_cholesterol is not None:
+        val = payload.total_cholesterol
+        matched_rule = None
+        for rule in THRESHOLDS_CONFIG.get("total_cholesterol", []):
+            min_v = rule.get("min", -float("inf"))
+            max_v = rule.get("max", float("inf"))
+            if min_v <= val <= max_v:
+                matched_rule = rule
+                break
+        if matched_rule:
+            findings.append(ClinicalFindingItem(
+                biomarker="Total Cholesterol",
+                canonical_key="total_cholesterol",
+                value=val,
+                unit="mg/dL",
+                category=matched_rule["category"],
+                severity_level=matched_rule["severity"],
+                message=matched_rule["message"],
+                repeat_note=matched_rule.get("repeat_note"),
+                reference_range="< 200 mg/dL"
+            ))
+            max_severity = max(max_severity, matched_rule["severity"])
+
+    # 4. LDL Cholesterol (ACC/AHA Guidelines)
+    if payload.ldl_cholesterol is not None:
+        val = payload.ldl_cholesterol
+        matched_rule = None
+        for rule in THRESHOLDS_CONFIG.get("ldl_cholesterol", []):
+            min_v = rule.get("min", -float("inf"))
+            max_v = rule.get("max", float("inf"))
+            if min_v <= val <= max_v:
+                matched_rule = rule
+                break
+        if matched_rule:
+            findings.append(ClinicalFindingItem(
+                biomarker="LDL Cholesterol",
+                canonical_key="ldl_cholesterol",
+                value=val,
+                unit="mg/dL",
+                category=matched_rule["category"],
+                severity_level=matched_rule["severity"],
+                message=matched_rule["message"],
+                repeat_note=matched_rule.get("repeat_note"),
+                reference_range="< 100 mg/dL"
+            ))
+            max_severity = max(max_severity, matched_rule["severity"])
+
+    # 5. HDL Cholesterol (Sex-Specific Stratification)
+    if payload.hdl_cholesterol is not None:
+        val = payload.hdl_cholesterol
+        sex_key = "female" if user_sex == 0 else "male"
+        hdl_rules = THRESHOLDS_CONFIG.get("hdl_cholesterol", {}).get(sex_key, [])
+        matched_rule = None
+        for rule in hdl_rules:
+            min_v = rule.get("min", -float("inf"))
+            max_v = rule.get("max", float("inf"))
+            if min_v <= val <= max_v:
+                matched_rule = rule
+                break
+        if matched_rule:
+            findings.append(ClinicalFindingItem(
+                biomarker="HDL Cholesterol",
+                canonical_key="hdl_cholesterol",
+                value=val,
+                unit="mg/dL",
+                category=matched_rule["category"],
+                severity_level=matched_rule["severity"],
+                message=matched_rule["message"],
+                repeat_note=matched_rule.get("repeat_note"),
+                reference_range="≥ 50 mg/dL" if sex_key == "female" else "≥ 40 mg/dL"
+            ))
+            max_severity = max(max_severity, matched_rule["severity"])
+
+    # 6. Triglycerides (AHA Guidelines)
+    if payload.triglycerides is not None:
+        val = payload.triglycerides
+        matched_rule = None
+        for rule in THRESHOLDS_CONFIG.get("triglycerides", []):
+            min_v = rule.get("min", -float("inf"))
+            max_v = rule.get("max", float("inf"))
+            if min_v <= val <= max_v:
+                matched_rule = rule
+                break
+        if matched_rule:
+            findings.append(ClinicalFindingItem(
+                biomarker="Triglycerides",
+                canonical_key="triglycerides",
+                value=val,
+                unit="mg/dL",
+                category=matched_rule["category"],
+                severity_level=matched_rule["severity"],
+                message=matched_rule["message"],
+                repeat_note=matched_rule.get("repeat_note"),
+                reference_range="< 150 mg/dL"
+            ))
+            max_severity = max(max_severity, matched_rule["severity"])
+
+    # 7. Blood Pressure (AHA/ACC 2017 Guidelines)
     if payload.bp_systolic is not None or payload.bp_diastolic is not None:
         sys_bp = payload.bp_systolic if payload.bp_systolic is not None else 120.0
         dia_bp = payload.bp_diastolic if payload.bp_diastolic is not None else 80.0
+        matched_rule = None
 
         if sys_bp > 180 or dia_bp > 120:
-            status, sev = "critical", 4
-            note = f"Blood pressure of {int(sys_bp)}/{int(dia_bp)} mmHg indicates a Hypertensive Urgency / Crisis (>180/>120 mmHg)."
-            rec = "Immediate medical evaluation recommended if accompanied by chest pain, headache, or shortness of breath."
+            category, sev = "hypertensive crisis range", 4
+            msg = "Blood pressure is in the hypertensive crisis range on this test; confirm with a clinician."
+            rep = "Emergency medical consultation advised if accompanied by acute chest pain, shortness of breath, or headache."
         elif sys_bp >= 140 or dia_bp >= 90:
-            status, sev = "elevated", 3
-            note = f"Blood pressure of {int(sys_bp)}/{int(dia_bp)} mmHg falls in Stage 2 Hypertension (≥140 or ≥90 mmHg)."
-            rec = "Consult your physician regarding lifestyle modifications and potential antihypertensive therapy."
+            category, sev = "stage 2 hypertension range", 3
+            msg = "Blood pressure is in the stage 2 hypertension range on this test; confirm with a clinician."
+            rep = "Confirm with repeat measurements across multiple clinical visits."
         elif (130 <= sys_bp < 140) or (80 <= dia_bp < 90):
-            status, sev = "borderline", 2
-            note = f"Blood pressure of {int(sys_bp)}/{int(dia_bp)} mmHg falls in Stage 1 Hypertension (130-139 or 80-89 mmHg)."
-            rec = "Adopt the DASH diet, reduce sodium intake, and track home blood pressure readings."
+            category, sev = "stage 1 hypertension range", 2
+            msg = "Blood pressure is in the stage 1 hypertension range on this test; confirm with a clinician."
+            rep = "AHA recommends home blood pressure monitoring and repeat clinical evaluation."
         elif 120 <= sys_bp < 130 and dia_bp < 80:
-            status, sev = "normal", 1
-            note = f"Blood pressure of {int(sys_bp)}/{int(dia_bp)} mmHg is elevated (120-129/<80 mmHg)."
-            rec = "Lifestyle modifications recommended to prevent progression to hypertension."
+            category, sev = "elevated", 1
+            msg = "Blood pressure is in the elevated range on this test; confirm with a clinician."
+            rep = "Lifestyle and dietary sodium review recommended."
         else:
-            status, sev = "optimal", 1
-            note = f"Blood pressure of {int(sys_bp)}/{int(dia_bp)} mmHg is normal (<120/<80 mmHg)."
-            rec = "Continue regular physical activity and stress management."
+            category, sev = "normal", 1
+            msg = "Blood pressure is in the normal range on this test; confirm with a clinician."
+            rep = None
 
-        max_severity = max(max_severity, sev)
         findings.append(ClinicalFindingItem(
             biomarker="Resting Blood Pressure",
             canonical_key="blood_pressure",
             value=sys_bp,
             unit="mmHg",
-            status=status,
+            category=category,
             severity_level=sev,
-            reference_range="< 120/80 mmHg",
-            clinical_finding=note,
-            recommendation=rec
+            message=msg,
+            repeat_note=rep,
+            reference_range="< 120/80 mmHg"
         ))
+        max_severity = max(max_severity, sev)
 
-    # Derive Heart Model & Diabetes Model Inputs
+    # Derive Model Inputs & Tiered Confidence
     model_inputs = derive_model_inputs_from_labs(payload)
 
     summary_status = "optimal" if max_severity == 1 else ("borderline" if max_severity == 2 else ("elevated" if max_severity == 3 else "critical"))
@@ -699,6 +728,8 @@ def evaluate_clinical_findings(payload: BiomarkerConfirmationPayload) -> LabFind
         summary_status=summary_status,
         findings=findings,
         model_inputs=model_inputs,
+        disagreement_flag=False,
+        disagreement_note=None,
         timestamp=datetime.now(timezone.utc).isoformat()
     )
 
@@ -706,35 +737,48 @@ def evaluate_clinical_findings(payload: BiomarkerConfirmationPayload) -> LabFind
 def derive_model_inputs_from_labs(payload: BiomarkerConfirmationPayload) -> ModelInputMapping:
     """
     Transforms confirmed lab biomarkers into parameters for the existing Heart Disease
-    (Logistic Regression) and Diabetes (XGBoost) models, computing the Tiered Confidence rating.
+    (Logistic Regression) and Diabetes (XGBoost) models.
+    Strict rules:
+    - Heart Model:
+      * chol = total_cholesterol
+      * fbs = 1 if confirmed FASTING glucose > 120 mg/dL, else 0 (random/postprandial CANNOT set fbs)
+      * trestbps = systolic BP if present
+      * Confidence tier becomes "standard" ONLY when all 3 values (BP, cholesterol, fasting glucose) are confirmed.
+    - Diabetes Model:
+      * HighChol = 1 if total_cholesterol >= 240 (raw reading takes precedence over survey)
+      * HighBP = 1 if bp_systolic >= 130 or bp_diastolic >= 80
+      * Glucose & HbA1c are NOT diabetes model inputs
     """
-    # 1. Heart Disease parameters
+    # 1. Heart Model Parameters
     trestbps_val = payload.bp_systolic
     chol_val = payload.total_cholesterol
-    fbs_glucose = payload.fasting_glucose or payload.random_glucose
+
+    # Glucose distinction: Only confirmed FASTING glucose can set fbs
+    fasting_val = payload.fasting_glucose
+    if payload.glucose_type == "fasting" and fasting_val is None:
+        fasting_val = payload.random_glucose or payload.postprandial_glucose
 
     imputed_fields = []
     if trestbps_val is None:
-        trestbps_val = 130.0  # Population median from heart_meta.json
+        trestbps_val = 130.0  # Population median
         imputed_fields.append("trestbps")
 
     if chol_val is None:
-        chol_val = 240.0  # Population median from heart_meta.json
+        chol_val = 240.0  # Population median
         imputed_fields.append("chol")
 
-    if fbs_glucose is None and payload.hba1c is None:
-        fbs_val = 0.0  # Population median from heart_meta.json
+    if fasting_val is None:
+        fbs_val = 0.0  # Population median
         imputed_fields.append("fbs")
     else:
-        is_elevated_sugar = (fbs_glucose is not None and fbs_glucose > 120) or (payload.hba1c is not None and payload.hba1c >= 6.5)
-        fbs_val = 1.0 if is_elevated_sugar else 0.0
+        fbs_val = 1.0 if fasting_val > 120.0 else 0.0
 
-    # Determine Tiered Confidence:
-    # Tier 1 ("high"): trestbps, chol, and fbs are all grounded in confirmed lab values
-    # Tier 2 ("partial"): at least one of trestbps or chol is verified from lab
-    # Tier 3 ("screening"): neither trestbps nor chol was available; all clinical metrics imputed
+    # Tiered Confidence Calculation:
+    # "standard": All three clinical values (trestbps, chol, fbs) are confirmed from lab
+    # "partial": At least one of trestbps or chol is verified from lab
+    # "screening": None of the clinical measurements were available
     if len(imputed_fields) == 0:
-        confidence_tier = "high"
+        confidence_tier = "standard"
     elif "trestbps" not in imputed_fields or "chol" not in imputed_fields:
         confidence_tier = "partial"
     else:
@@ -748,12 +792,12 @@ def derive_model_inputs_from_labs(payload: BiomarkerConfirmationPayload) -> Mode
         "imputed_fields": imputed_fields
     }
 
-    # 2. Diabetes Model Derived Parameters
+    # 2. Diabetes Model Parameters
+    # HighChol = 1 if cholesterol >= 240 mg/dL
+    high_chol = 1.0 if (payload.total_cholesterol is not None and payload.total_cholesterol >= 240.0) else 0.0
     sys_bp = payload.bp_systolic
     dia_bp = payload.bp_diastolic
-    high_bp = 1.0 if (sys_bp is not None and sys_bp >= 130) or (dia_bp is not None and dia_bp >= 80) else 0.0
-
-    high_chol = 1.0 if (payload.total_cholesterol is not None and payload.total_cholesterol >= 200) or (payload.ldl_cholesterol is not None and payload.ldl_cholesterol >= 130) else 0.0
+    high_bp = 1.0 if (sys_bp is not None and sys_bp >= 130.0) or (dia_bp is not None and dia_bp >= 80.0) else 0.0
 
     diabetes_inputs = {
         "HighBP": high_bp,
@@ -766,3 +810,33 @@ def derive_model_inputs_from_labs(payload: BiomarkerConfirmationPayload) -> Mode
         confidence_tier=confidence_tier,
         imputed_fields=imputed_fields
     )
+
+
+def check_disagreement(findings: List[ClinicalFindingItem], model_results: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """
+    Checks if rule-based lab findings and ML model risk estimates diverge.
+    If they disagree, returns (True, explanatory_note).
+    """
+    has_high_lab_finding = any(f.severity_level >= 3 for f in findings)
+    all_optimal_lab_findings = all(f.severity_level == 1 for f in findings) if findings else False
+
+    d_res = model_results.get("diabetes", {}) or {}
+    h_res = model_results.get("heartDisease", {}) or {}
+    d_high = d_res.get("risk", {}).get("isHighRisk", False)
+    h_high = h_res.get("risk", {}).get("isHighRisk", False)
+
+    # Disagreement Case 1: Lab findings indicate high/elevated readings, but model predicts low risk
+    if has_high_lab_finding and not (d_high or h_high):
+        return (
+            True,
+            "Lab findings indicate readings in the elevated or high range, whereas the statistical screening model predicted lower risk. Direct biological laboratory measurements take precedence; consult a clinician for repeat diagnostic evaluation."
+        )
+
+    # Disagreement Case 2: Lab findings are desirable/optimal, but model predicts high risk
+    if all_optimal_lab_findings and (d_high or h_high):
+        return (
+            True,
+            "Lab findings are within desirable reference intervals, whereas the lifestyle and demographic model highlights elevated risk. Consult a clinician to interpret both within your complete clinical picture."
+        )
+
+    return False, None

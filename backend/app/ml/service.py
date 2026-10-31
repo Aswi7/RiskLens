@@ -213,13 +213,13 @@ def predict_heart_disease_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # Tiered Confidence Calculation:
-    # High: All clinical values (trestbps, chol, fbs) provided/verified (no imputations)
+    # Standard: All clinical values (trestbps, chol, fbs) provided/verified (no imputations)
     # Partial: At least one of trestbps or chol provided; others imputed
     # Screening: All clinical metrics imputed with population medians
     if "confidenceTier" in payload and payload["confidenceTier"]:
         confidence_tier = payload["confidenceTier"]
     elif len(imputed_fields) == 0:
-        confidence_tier = "high"
+        confidence_tier = "standard"
     elif "trestbps" not in imputed_fields or "chol" not in imputed_fields:
         confidence_tier = "partial"
     else:

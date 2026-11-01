@@ -266,7 +266,7 @@ def extract_biomarkers_rule_based(
             source_snippet=bp_snippet
         )
 
-    lines = clean_text.splitlines()
+    lines = [l.strip() for l in clean_text.splitlines() if l.strip()]
 
     for spec in ANALYTES_CONFIG:
         key = spec["canonical_key"]
@@ -276,52 +276,73 @@ def extract_biomarkers_rule_based(
         if key in detected:
             continue
 
+        min_valid, max_valid = spec["plausible_range"]
+
         for syn in spec["synonyms"]:
-            # Flexible pattern that tolerates parentheses, test method tags, and table separators
             pattern = rf"(?:{syn})(?:\s*\([^)]*\))?[^\d\n\r]{{0,40}}?([0-9]+(?:\.[0-9]+)?)(?:\s*\|\s*|\s+)?(mg/dl|mmol/l|mmol/mol|%|g/dl|mg/l)?\s*([HL]|HIGH|LOW|ABNORMAL|\*|▲|▼)?"
             found = False
 
-            for line in lines:
+            for idx, line in enumerate(lines):
+                val = None
+                unit_str = spec["canonical_unit"]
+                flag_str = None
+                snippet = line
+
+                # Check A: Same-line match
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
-                    val_str = match.group(1)
+                    val = float(match.group(1))
                     unit_str = (match.group(2) or spec["canonical_unit"]).strip()
                     flag_str = match.group(3).strip() if match.group(3) else None
-                    val = float(val_str)
+                else:
+                    # Check B: Multi-line table column layout (common in PDF lab reports)
+                    # If this line has the analyte title, the value may be on the next 1-3 lines
+                    if re.search(rf'^(?:[^\w\n\r]*)(?:{syn})', line, re.I) or re.search(rf'\b(?:{syn})\b', line, re.I):
+                        # Skip reference range explanatory notes
+                        if not re.search(r'\b(normal|impaired|suspicion|desirable|optimal|borderline|adjusted|ranges)\b', line, re.I):
+                            for next_offset in range(1, 4):
+                                if idx + next_offset < len(lines):
+                                    next_line = lines[idx + next_offset]
+                                    num_m = re.search(r'^([0-9]+(?:\.[0-9]+)?)\b', next_line)
+                                    if num_m:
+                                        val = float(num_m.group(1))
+                                        snippet = f"{line} -> {next_line}"
+                                        # Look for unit and flag on next_line and following lines
+                                        for look_ahead in range(next_offset, next_offset + 3):
+                                            if idx + look_ahead < len(lines):
+                                                ahead_line = lines[idx + look_ahead]
+                                                u_m = re.search(r'\b(mg/dl|mmol/l|mmol/mol|%|g/dl|mg/l)\b', ahead_line, re.I)
+                                                if u_m:
+                                                    unit_str = u_m.group(1)
+                                                f_m = re.search(r'\b(HIGH|LOW|NORMAL|ABNORMAL|[HL])\b', ahead_line, re.I)
+                                                if f_m:
+                                                    flag_str = f_m.group(1).upper()
+                                        break
 
+                if val is not None:
                     # --- UNIT CONVERSION LOGIC ---
                     unit_lower = unit_str.lower()
-
-                    # Glucose conversion: mmol/L x 18.0 = mg/dL
                     if "glucose" in key and "mmol" in unit_lower:
                         val = round(val * 18.0, 1)
                         unit_str = "mg/dL"
-
-                    # Cholesterol (Total, LDL, HDL) conversion: mmol/L x 38.67 = mg/dL
                     elif ("cholesterol" in key or key in ("total_cholesterol", "ldl_cholesterol", "hdl_cholesterol")) and "mmol" in unit_lower:
                         val = round(val * 38.67, 1)
                         unit_str = "mg/dL"
-
-                    # Triglycerides conversion: mmol/L x 88.57 = mg/dL
                     elif "triglycerides" in key and "mmol" in unit_lower:
                         val = round(val * 88.57, 1)
                         unit_str = "mg/dL"
-
-                    # HbA1c conversion: mmol/mol to % = 0.0915 * value + 2.15
                     elif key == "hba1c" and "mmol/mol" in unit_lower:
                         val = round(0.0915 * val + 2.15, 2)
                         unit_str = "%"
 
-                    # Plausible Range Filter: Discard OCR artifacts / invalid numbers
-                    min_valid, max_valid = spec["plausible_range"]
+                    # Plausible Range Filter
                     if not (min_valid <= val <= max_valid):
                         continue
 
-                    # Reference Range Extraction from Line (e.g. "Reference: 70-99", "Normal: <200")
+                    # Reference range extraction
                     ref_match = re.search(r"(?:Ref(?:erence)?|Normal|Desirable)[^\w\n\r]*[:\t ]*([<>=0-9 -]+(?:\.[0-9]+)?\s*(?:mg/dl|%|mmol/l)?)", line, re.IGNORECASE)
                     ref_range = ref_match.group(1).strip() if ref_match else None
 
-                    # Confidence determination
                     item_conf = source_confidence
                     if key == "unknown_glucose":
                         item_conf = "low"
@@ -335,7 +356,7 @@ def extract_biomarkers_rule_based(
                         reference_range=ref_range,
                         flag=flag_str,
                         confidence=item_conf,
-                        source_snippet=line.strip()[:100],
+                        source_snippet=snippet[:100],
                         glucose_type=spec.get("glucose_type")
                     )
                     found = True

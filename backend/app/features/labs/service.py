@@ -433,14 +433,13 @@ DOCUMENT TEXT:
 
     for g_key in gemini_keys:
         try:
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-            headers = {"x-goog-api-key": g_key}
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={g_key}"
             payload = {
                 "contents": [{"parts": [{"text": prompt_instruction}]}],
                 "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
             }
-            with httpx.Client(timeout=6.0) as client:
-                res = client.post(url, json=payload, headers=headers)
+            with httpx.Client(timeout=10.0) as client:
+                res = client.post(url, json=payload, headers={"Content-Type": "application/json"})
                 if res.status_code == 200:
                     data = res.json()
                     raw = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -547,8 +546,7 @@ Output JSON only. Do not add explanations."""
 
         for g_key in gemini_keys:
             try:
-                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-                headers = {"x-goog-api-key": g_key}
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={g_key}"
                 payload = {
                     "contents": [
                         {
@@ -560,8 +558,8 @@ Output JSON only. Do not add explanations."""
                     ],
                     "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
                 }
-                async with httpx.AsyncClient(timeout=8.0) as client:
-                    res = await client.post(url, json=payload, headers=headers)
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    res = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
                     if res.status_code == 200:
                         text_out = res.json()["candidates"][0]["content"]["parts"][0]["text"]
                         parsed_json = json.loads(text_out)

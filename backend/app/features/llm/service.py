@@ -204,9 +204,8 @@ def call_llm_json(prompt: str, system_prompt: str) -> Optional[Dict[str, Any]]:
     anthropic_key = settings.ANTHROPIC_API_KEY or os.environ.get("ANTHROPIC_API_KEY")
 
     # 1. Gemini API Call via REST
-    if gemini_key and gemini_key.startswith("AIza"):
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        headers = {"x-goog-api-key": gemini_key}
+    if gemini_key and (gemini_key.startswith("AQ.") or gemini_key.startswith("AIza")):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={gemini_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -214,8 +213,8 @@ def call_llm_json(prompt: str, system_prompt: str) -> Optional[Dict[str, Any]]:
         }
         for attempt in range(2):
             try:
-                with httpx.Client(timeout=4.0) as client:
-                    resp = client.post(url, json=payload, headers=headers)
+                with httpx.Client(timeout=15.0) as client:
+                    resp = client.post(url, json=payload, headers={"Content-Type": "application/json"})
                     resp.raise_for_status()
                     data = resp.json()
                     raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -412,16 +411,15 @@ def generate_chat_reply(
 
 
     # 1. Gemini LLM Call
-    if gemini_key and gemini_key.startswith("AIza"):
+    if gemini_key and (gemini_key.startswith("AQ.") or gemini_key.startswith("AIza")):
         try:
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-            headers = {"x-goog-api-key": gemini_key}
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={gemini_key}"
             payload = {
                 "contents": [{"parts": [{"text": full_prompt}]}],
                 "system_instruction": {"parts": [{"text": CHAT_SYSTEM_PROMPT}]}
             }
-            with httpx.Client(timeout=4.0) as client:
-                resp = client.post(url, json=payload, headers=headers)
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.post(url, json=payload, headers={"Content-Type": "application/json"})
                 resp.raise_for_status()
                 data = resp.json()
                 reply_text = data["candidates"][0]["content"]["parts"][0]["text"]

@@ -4,7 +4,7 @@ import {
   Activity, Heart, Activity as PulseIcon, Sparkles,
   MapPin, MessageSquare, Send, RefreshCw,
   FileText, User as UserIcon, Info, AlertTriangle, CheckSquare, Square, Stethoscope, ArrowRight,
-  TrendingUp, Navigation, Phone, Search, ExternalLink, Compass
+  TrendingUp, Navigation, Phone, Search, ExternalLink, Compass, ClipboardList
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useAuth } from '../context/AuthContext';
@@ -403,7 +403,7 @@ export const DashboardPage = () => {
                 { id: 'trend', label: 'Risk Trajectory Trend', icon: TrendingUp },
                 { id: 'labs', label: 'Lab Reports & Trends', icon: FileText },
                 { id: 'shap', label: 'Why Your Results Look This Way', icon: Sparkles },
-                { id: 'recommendations', label: 'Personalized Checklist', icon: FileText },
+                { id: 'recommendations', label: 'Personalized Action Plan', icon: ClipboardList },
                 { id: 'chat', label: 'AI Health Chatbot', icon: MessageSquare },
                 { id: 'specialists', label: 'Nearby Specialists', icon: MapPin },
               ].map((tab) => {
@@ -759,83 +759,103 @@ export const DashboardPage = () => {
                       </div>
                     )}
 
-                    {/* Diet Checklist */}
-                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
-                          🥗
+                    {/* Dietary Action Plan */}
+                    <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base shadow-xs">
+                            🥗
+                          </div>
+                          <div>
+                            <h3 className="font-heading font-bold text-base text-slate-900">Dietary Nutrition Plan</h3>
+                            <p className="text-[11px] text-slate-500">Targeted nutrition to support insulin sensitivity and lipid balance</p>
+                          </div>
                         </div>
-                        <h3 className="font-heading font-bold text-base text-slate-900">Dietary Action Checklist</h3>
+                        <span className="text-[10px] uppercase font-extrabold tracking-wider px-3 py-1 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-200">
+                          Nutrition Roadmap
+                        </span>
                       </div>
 
-                      <div className="space-y-3">
-                        {recommendations.diet.map((item, idx) => {
-                          const id = `diet_${idx}`;
-                          const isDone = !!checkedItems[id];
-                          return (
-                            <div
-                              key={id}
-                              onClick={() => toggleCheck(id)}
-                              className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
-                                isDone ? 'bg-emerald-50/60 border-emerald-200 text-slate-500 line-through' : 'bg-slate-50 border-slate-200 text-slate-800 hover:border-slate-300'
-                              }`}
-                            >
-                              {isDone ? (
-                                <CheckSquare className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                              ) : (
-                                <Square className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
-                              )}
-                              <span className="text-xs leading-relaxed font-medium">{item}</span>
+                      <div className="grid grid-cols-1 gap-3">
+                        {recommendations.diet.map((item, idx) => (
+                          <div
+                            key={`diet_${idx}`}
+                            className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90 flex items-start gap-3.5 hover:bg-emerald-50/20 transition-colors"
+                          >
+                            <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                              {idx + 1}
                             </div>
-                          );
-                        })}
+                            <div className="space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Action Step {idx + 1}</span>
+                              <p className="text-xs text-slate-800 leading-relaxed font-medium">{item}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
-                    {/* Exercise Checklist */}
-                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-                        <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
-                          🏃
+                    {/* Physical Activity Plan */}
+                    <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-base shadow-xs">
+                            🏃
+                          </div>
+                          <div>
+                            <h3 className="font-heading font-bold text-base text-slate-900">Physical Activity &amp; Exercise Plan</h3>
+                            <p className="text-[11px] text-slate-500">Structured movement protocols to enhance cardiovascular endurance</p>
+                          </div>
                         </div>
-                        <h3 className="font-heading font-bold text-base text-slate-900">Physical Activity Checklist</h3>
+                        <span className="text-[10px] uppercase font-extrabold tracking-wider px-3 py-1 bg-blue-50 text-blue-700 rounded-xl border border-blue-200">
+                          Activity Roadmap
+                        </span>
                       </div>
 
-                      <div className="space-y-3">
-                        {recommendations.exercise.map((item, idx) => {
-                          const id = `exercise_${idx}`;
-                          const isDone = !!checkedItems[id];
-                          return (
-                            <div
-                              key={id}
-                              onClick={() => toggleCheck(id)}
-                              className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
-                                isDone ? 'bg-blue-50/60 border-blue-200 text-slate-500 line-through' : 'bg-slate-50 border-slate-200 text-slate-800 hover:border-slate-300'
-                              }`}
-                            >
-                              {isDone ? (
-                                <CheckSquare className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-                              ) : (
-                                <Square className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
-                              )}
-                              <span className="text-xs leading-relaxed font-medium">{item}</span>
+                      <div className="grid grid-cols-1 gap-3">
+                        {recommendations.exercise.map((item, idx) => (
+                          <div
+                            key={`exercise_${idx}`}
+                            className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90 flex items-start gap-3.5 hover:bg-blue-50/20 transition-colors"
+                          >
+                            <div className="w-7 h-7 rounded-xl bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                              {idx + 1}
                             </div>
-                          );
-                        })}
+                            <div className="space-y-0.5">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800">Action Step {idx + 1}</span>
+                              <p className="text-xs text-slate-800 leading-relaxed font-medium">{item}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
-                    {/* Sleep & Lifestyle */}
-                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                      <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-                        <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">
-                          😴
+                    {/* Sleep & Lifestyle Recovery Plan */}
+                    <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-base shadow-xs">
+                            😴
+                          </div>
+                          <div>
+                            <h3 className="font-heading font-bold text-base text-slate-900">Sleep &amp; Recovery Protocol</h3>
+                            <p className="text-[11px] text-slate-500">Circadian optimization for hormonal balance and cellular repair</p>
+                          </div>
                         </div>
-                        <h3 className="font-heading font-bold text-base text-slate-900">Sleep &amp; Recovery Guidance</h3>
+                        <span className="text-[10px] uppercase font-extrabold tracking-wider px-3 py-1 bg-purple-50 text-purple-700 rounded-xl border border-purple-200">
+                          Recovery Protocol
+                        </span>
                       </div>
-                      <p className="text-xs text-slate-700 leading-relaxed p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
-                        {recommendations.sleep}
-                      </p>
+                      <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/90 flex items-start gap-3.5">
+                        <div className="w-7 h-7 rounded-xl bg-purple-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                          ★
+                        </div>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800">Nightly Recovery Strategy</span>
+                          <p className="text-xs text-slate-800 leading-relaxed font-medium">
+                            {recommendations.sleep}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Medical Safety Disclaimer */}

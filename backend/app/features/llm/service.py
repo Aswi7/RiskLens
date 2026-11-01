@@ -479,6 +479,44 @@ def generate_chat_reply(
             "• **HDL ('Good' Cholesterol)**: Protective against heart disease by removing circulating fat particles. Desirable is >50 mg/dL for females and >40 mg/dL for males.\n"
             "• **Actionable Next Steps**: Eliminating simple sugars, refined carbs, and alcohol while adding regular aerobic exercise and prescription lipid-lowering therapy under a doctor's care."
         )
+    elif any(k in msg_lower for k in ["blood pressure", "hypertension", "systolic", "diastolic", "high bp"]):
+        medical_guidance = (
+            "Key guidelines on **Blood Pressure & Arterial Health**:\n\n"
+            "• **Normal Blood Pressure**: Systolic < 120 mmHg and Diastolic < 80 mmHg.\n"
+            "• **Elevated / Stage 1 Hypertension**: Systolic 120–139 mmHg or Diastolic 80–89 mmHg.\n"
+            "• **Stage 2 Hypertension**: Systolic ≥ 140 mmHg or Diastolic ≥ 90 mmHg.\n"
+            "• **Why It Matters**: Chronic hypertension stiffens arteries, straining the heart and accelerating vascular damage.\n"
+            "• **Evidence-Based Reductions**: Adopting the DASH diet (rich in potassium and magnesium), moderating sodium (<2,300 mg/day), regular aerobic exercise, and managing chronic stress."
+        )
+    elif any(k in msg_lower for k in ["diet", "food", "eat", "nutrition", "sugar", "carbs", "meal"]):
+        medical_guidance = (
+            "Evidence-based **Nutritional Guidance for Cardiometabolic Health**:\n\n"
+            "• **Focus on Whole Foods**: Prioritize vegetables, legumes, whole grains, nuts, seeds, and lean proteins (fish, poultry).\n"
+            "• **Healthy Fats**: Replace saturated and trans fats with monounsaturated fats (extra virgin olive oil, avocados) and omega-3 fatty acids.\n"
+            "• **Blood Sugar & Triglyceride Control**: Severely limit sugar-sweetened beverages, refined flour, sweets, and ultra-processed snacks that trigger rapid insulin spikes and hepatic fat synthesis.\n"
+            "• **Fiber Intake**: Aim for 25–35 grams of dietary fiber daily to slow carbohydrate absorption and assist in cholesterol clearance."
+        )
+    elif any(k in msg_lower for k in ["exercise", "workout", "fitness", "walking", "steps", "physical activity"]):
+        medical_guidance = (
+            "Clinical recommendations for **Physical Activity & Longevity**:\n\n"
+            "• **Aerobic Exercise**: At least 150 minutes of moderate-intensity aerobic exercise (e.g., brisk walking, cycling) or 75 minutes of vigorous activity per week.\n"
+            "• **Resistance Training**: Incorporate muscle-strengthening exercises at least 2 days per week to enhance cellular glucose uptake and insulin sensitivity.\n"
+            "• **Daily Step Target**: Aiming for 7,000–10,000 steps daily reduces cardiovascular mortality and maintains vascular elasticity."
+        )
+    elif any(k in msg_lower for k in ["sleep", "stress", "insomnia", "cortisol", "tired", "fatigue"]):
+        medical_guidance = (
+            "Impact of **Sleep & Stress on Metabolic Health**:\n\n"
+            "• **Sleep Duration**: 7 to 9 hours of restorative, uninterrupted sleep is essential. Sleep deprivation elevates evening cortisol and disrupts appetite hormones (ghrelin and leptin).\n"
+            "• **Sleep Hygiene**: Keep a consistent sleep schedule, eliminate blue-light screens 1 hour before bed, and keep the bedroom cool and dark.\n"
+            "• **Stress Reduction**: Chronic psychological stress triggers sympathetic nervous system activation, elevating resting blood pressure and resting heart rate."
+        )
+    elif any(k in msg_lower for k in ["hba1c", "glucose", "lab", "test", "biomarker"]):
+        medical_guidance = (
+            "Understanding your **Key Clinical Lab Biomarkers**:\n\n"
+            "• **Fasting Glucose**: 70–99 mg/dL is Normal; 100–125 mg/dL indicates Prediabetes; ≥126 mg/dL indicates Diabetes.\n"
+            "• **HbA1c**: Reflects average blood sugar over 2–3 months. Below 5.7% is Normal; 5.7%–6.4% is Prediabetes; ≥6.5% indicates Diabetes.\n"
+            "• **Lipid Panel**: Total Cholesterol (<200 mg/dL desirable), Triglycerides (<150 mg/dL normal), and HDL (>50 mg/dL for women, >40 mg/dL for men)."
+        )
     else:
         medical_guidance = (
             f"To address your inquiry ('{user_message}'): In preventive healthcare, sustaining cardiovascular and metabolic wellness "

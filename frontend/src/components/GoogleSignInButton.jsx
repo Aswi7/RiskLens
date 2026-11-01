@@ -43,7 +43,13 @@ export const GoogleSignInButton = ({ mode = 'signin', redirect = '/dashboard' })
             await googleLogin({ access_token: tokenResponse.access_token });
             navigate(redirect);
           } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to authenticate with Google.');
+            const status = err.response?.status;
+            const detail = err.response?.data?.detail;
+            if (status === 403) {
+              setError(detail || 'No RiskLens account found for this Google email. Please register first with email & password, then use Google sign-in.');
+            } else {
+              setError(detail || 'Failed to authenticate with Google.');
+            }
           } finally {
             setLoading(false);
           }

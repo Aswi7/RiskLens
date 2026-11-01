@@ -266,40 +266,27 @@ async def google_auth(request_data: GoogleAuthRequest):
     full_name = google_profile.get("name") or email.split("@")[0]
     picture = google_profile.get("picture")
 
-    # Check if user already exists
+    # Check if user already exists — Google sign-in is only for existing accounts
     user = await db.users.find_one({"email": email})
-    if user:
-        user_id = str(user["_id"])
-        updates = {}
-        if not user.get("google_id") and google_sub:
-            updates["google_id"] = google_sub
-        if picture and not user.get("avatar_url"):
-            updates["avatar_url"] = picture
-        if not user.get("full_name") and full_name:
-            updates["full_name"] = full_name
-        if "auth_provider" not in user:
-            updates["auth_provider"] = "google"
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No account found with this Google email. Please register first using email and password."
+        )
 
-        if updates:
-            await db.users.update_one({"_id": user["_id"]}, {"$set": updates})
-    else:
-        # Register new Google authenticated user
-        created_at = datetime.now(timezone.utc).isoformat()
-        user_doc = {
-            "email": email,
-            "full_name": full_name,
-            "google_id": google_sub,
-            "avatar_url": picture,
-            "auth_provider": "google",
-            "created_at": created_at
-        }
-        try:
-            res = await db.users.insert_one(user_doc)
-            user_id = str(res.inserted_id)
-        except DuplicateKeyError:
-            # User was created concurrently or exists; retrieve their record
-            existing = await db.users.find_one({"email": email})
-            user_id = str(existing["_id"])
+    user_id = str(user["_id"])
+    updates = {}
+    if not user.get("google_id") and google_sub:
+        updates["google_id"] = google_sub
+    if picture and not user.get("avatar_url"):
+        updates["avatar_url"] = picture
+    if not user.get("full_name") and full_name:
+        updates["full_name"] = full_name
+    if "auth_provider" not in user:
+        updates["auth_provider"] = "google"
+
+    if updates:
+        await db.users.update_one({"_id": user["_id"]}, {"$set": updates})
 
     access_token = create_access_token(data={"sub": user_id, "email": email})
     return Token(access_token=access_token, token_type="bearer")

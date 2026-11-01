@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Activity, ArrowRight, ShieldCheck, Mail, Lock, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { GoogleSignInButton } from '../components/GoogleSignInButton';
 
 export const RegisterPage = () => {
   const { register } = useAuth();
@@ -168,21 +167,10 @@ export const RegisterPage = () => {
             </button>
           </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-3 text-slate-400 font-semibold tracking-wider">
-                  Or continue with
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <GoogleSignInButton mode="signup" redirect={redirect} />
-            </div>
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+            <span className="font-semibold">Already have an account?</span> Head to the{' '}
+            <Link to="/login" className="font-bold text-teal-600 hover:text-teal-700 underline">Sign In</Link>{' '}
+            page to use <span className="font-semibold">Sign in with Google</span> for quick access.
           </div>
 
           <div className="mt-6 text-center text-xs text-slate-500">

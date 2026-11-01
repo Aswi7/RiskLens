@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
@@ -110,8 +111,9 @@ async def chat_health_assistant(
     except Exception:
         retrieved_chunks = []
 
-    # Generate reply (with Pre-LLM safety checks)
-    chat_response = generate_chat_reply(
+    # Generate reply (with Pre-LLM safety checks in separate thread to keep asyncio event loop free)
+    chat_response = await asyncio.to_thread(
+        generate_chat_reply,
         user_message=req.message,
         history=req.history or [],
         context=context or {},

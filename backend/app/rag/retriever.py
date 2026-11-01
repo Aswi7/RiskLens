@@ -44,12 +44,18 @@ async def retrieve_medical_knowledge(
     if not user_message or not user_message.strip():
         return []
 
+    db = get_database()
+    if db is None:
+        return []
+    collection = db["medicalKnowledge"]
+    
+    # Fast check: if knowledge base collection is empty, skip neural embedding
+    count = await collection.count_documents({})
+    if count == 0:
+        return []
+
     embedder = get_embedder()
     query_vector = await asyncio.to_thread(lambda: embedder.encode(user_message).tolist())
-
-
-    db = get_database()
-    collection = db["medicalKnowledge"]
 
     results = []
 

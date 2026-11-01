@@ -240,11 +240,15 @@ export const DashboardPage = () => {
           content: m.text
         }));
 
-      const res = await api.post('/chat', {
-        message,
-        history: historyPayload,
-        context: predictionData?.results || predictionData
-      });
+      const res = await api.post(
+        '/chat',
+        {
+          message,
+          history: historyPayload,
+          context: predictionData?.results || predictionData
+        },
+        { timeout: 60000 }
+      );
 
       const replyData = res.data;
       setChatMessages((prev) => [

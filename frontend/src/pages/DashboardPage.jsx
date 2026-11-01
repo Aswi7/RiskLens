@@ -16,6 +16,9 @@ export const DashboardPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  const displayName = user?.full_name || user?.name || (user?.email ? user.email.split('@')[0].replace(/^\w/, (c) => c.toUpperCase()) : 'User');
+  const displayInitial = (displayName || 'U').charAt(0).toUpperCase();
+
   const [predictionData, setPredictionData] = useState(null);
   const [healthScoreData, setHealthScoreData] = useState(null);
   const [historyRecords, setHistoryRecords] = useState([]);
@@ -32,7 +35,7 @@ export const DashboardPage = () => {
   const [chatMessages, setChatMessages] = useState([
     {
       sender: 'ai',
-      text: `Hello ${user?.name || 'there'}! I'm riskLens AI Health Assistant. How can I assist you with your health indicators today?`,
+      text: `Hello ${displayName}! I'm riskLens AI Health Assistant. How can I assist you with your health indicators today?`,
       time: 'Just now'
     }
   ]);
@@ -319,9 +322,9 @@ export const DashboardPage = () => {
 
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
               <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
-                {user?.name?.charAt(0) || 'U'}
+                {displayInitial}
               </div>
-              <span className="hidden sm:inline text-xs font-bold text-slate-800">{user?.name || user?.email || 'User'}</span>
+              <span className="hidden sm:inline text-xs font-bold text-slate-800">{displayName}</span>
               <button
                 onClick={() => {
                   logout();
@@ -350,7 +353,7 @@ export const DashboardPage = () => {
               <Sparkles className="w-8 h-8" />
             </div>
             <div>
-              <h2 className="font-heading text-2xl font-bold text-slate-900">Welcome to RiskLens, {user?.name || 'User'}!</h2>
+              <h2 className="font-heading text-2xl font-bold text-slate-900">Welcome to RiskLens, {displayName}!</h2>
               <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
                 You don't have any health risk assessment records yet. Take your first 10-step health assessment to calculate your Type 2 Diabetes and Heart Disease risk scores, view local SHAP drivers, and receive personalized AI advice.
               </p>
@@ -374,7 +377,7 @@ export const DashboardPage = () => {
                   Multi-Model AI Screening Pipeline
                 </div>
                 <h1 className="font-heading text-2xl sm:text-3xl font-extrabold">
-                  Health Report for {user?.name || user?.email || 'User'}
+                  Health Report for {displayName}
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-300 mt-1">
                   Evaluated: Type 2 Diabetes (XGBoost) &amp; Heart Disease (Logistic Regression with StandardScaler)

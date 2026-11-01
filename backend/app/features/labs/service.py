@@ -212,7 +212,11 @@ def extract_blood_pressure(text: str) -> Tuple[Optional[float], Optional[float],
     Extracts blood pressure pair (systolic/diastolic) from text.
     Returns (sys, dia, snippet, confidence).
     """
-    bp_match = re.search(r"(?:BP|Blood\s+Pressure)?[^\w\n\r]*(\d{2,3})\s*[/]\s*(\d{2,3})\s*(?:mm\s*hg)?", text, re.IGNORECASE)
+    bp_match = re.search(r"(?:BP|Blood\s+Pressure)(?:\s*\([^)]*\))?[^\d\n\r]{0,30}?(\d{2,3})\s*[/]\s*(\d{2,3})\s*(?:mm\s*hg)?", text, re.IGNORECASE)
+    if not bp_match:
+        bp_match = re.search(r"\b(\d{2,3})\s*[/]\s*(\d{2,3})\s*(?:mm\s*hg)\b", text, re.IGNORECASE)
+    if not bp_match:
+        bp_match = re.search(r"(?:BP|Blood\s+Pressure)?[^\w\n\r]*(\d{2,3})\s*[/]\s*(\d{2,3})\s*(?:mm\s*hg)?", text, re.IGNORECASE)
     if bp_match:
         sys_val = float(bp_match.group(1))
         dia_val = float(bp_match.group(2))
@@ -273,8 +277,8 @@ def extract_biomarkers_rule_based(
             continue
 
         for syn in spec["synonyms"]:
-            # Pattern matches analyte name, value, optional unit, and optional H/L flag
-            pattern = rf"(?:{syn})[^\w\n\r]*[:\t -]*([0-9]+(?:\.[0-9]+)?)\s*(mg/dl|mmol/l|mmol/mol|%|g/dl|mg/l)?\s*([HL]|HIGH|LOW|ABNORMAL|\*|▲|▼)?"
+            # Flexible pattern that tolerates parentheses, test method tags, and table separators
+            pattern = rf"(?:{syn})(?:\s*\([^)]*\))?[^\d\n\r]{{0,40}}?([0-9]+(?:\.[0-9]+)?)(?:\s*\|\s*|\s+)?(mg/dl|mmol/l|mmol/mol|%|g/dl|mg/l)?\s*([HL]|HIGH|LOW|ABNORMAL|\*|▲|▼)?"
             found = False
 
             for line in lines:
@@ -340,11 +344,139 @@ def extract_biomarkers_rule_based(
             if found:
                 break
 
+    # Remove redundant unknown_glucose if a specific glucose type was already detected
+    if ("fasting_glucose" in detected or "random_glucose" in detected or "postprandial_glucose" in detected) and "unknown_glucose" in detected:
+        del detected["unknown_glucose"]
+
     # If unknown_glucose was detected, and neither fasting nor random was specifically identified:
     if "unknown_glucose" in detected and "fasting_glucose" not in detected and "random_glucose" not in detected:
         unclear_glucose = True
 
     return detected, unclear_glucose
+
+
+def extract_via_llm_text(clean_text: str) -> Dict[str, ExtractedBiomarkerItem]:
+    """
+    Intelligent LLM-assisted lab extraction for text extracted from digital PDFs.
+    Handles arbitrary table layouts, column structures, and doctor notes.
+    Tries GEMINI_API_KEY, then automatically falls back to GOOGLE_API_KEY.
+    """
+    if not clean_text or len(clean_text.strip()) < 15:
+        return {}
+
+    gemini_keys = [k for k in [settings.GEMINI_API_KEY, settings.GOOGLE_API_KEY] if k]
+    openai_key = settings.OPENAI_API_KEY
+
+    prompt_instruction = f"""You are a clinical laboratory report parser.
+Extract the clinical lab values from the following document text.
+Return valid JSON ONLY matching this exact structure:
+{{
+  "fasting_glucose": number or null,
+  "random_glucose": number or null,
+  "postprandial_glucose": number or null,
+  "hba1c": number or null,
+  "total_cholesterol": number or null,
+  "ldl_cholesterol": number or null,
+  "hdl_cholesterol": number or null,
+  "triglycerides": number or null,
+  "bp_systolic": number or null,
+  "bp_diastolic": number or null
+}}
+
+RULES:
+- Standard units required: mg/dL for glucose and lipids, % for HbA1c, mmHg for BP.
+- If reported in mmol/L, convert to mg/dL:
+  * Glucose: multiply by 18.0
+  * Cholesterol (Total, LDL, HDL): multiply by 38.67
+  * Triglycerides: multiply by 88.57
+- If a biomarker is not found in the text, return null.
+- Output ONLY the JSON object.
+
+DOCUMENT TEXT:
+\"\"\"
+{clean_text[:4000]}
+\"\"\""""
+
+    name_map = {
+        "fasting_glucose": "Fasting Blood Glucose",
+        "random_glucose": "Random Blood Glucose",
+        "postprandial_glucose": "Post-Prandial Blood Glucose",
+        "hba1c": "Hemoglobin A1c (HbA1c)",
+        "total_cholesterol": "Total Cholesterol",
+        "ldl_cholesterol": "LDL Cholesterol",
+        "hdl_cholesterol": "HDL Cholesterol",
+        "triglycerides": "Triglycerides",
+        "bp_systolic": "Systolic Blood Pressure",
+        "bp_diastolic": "Diastolic Blood Pressure"
+    }
+
+    for g_key in gemini_keys:
+        try:
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+            headers = {"x-goog-api-key": g_key}
+            payload = {
+                "contents": [{"parts": [{"text": prompt_instruction}]}],
+                "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
+            }
+            with httpx.Client(timeout=6.0) as client:
+                res = client.post(url, json=payload, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed = json.loads(raw)
+                    results = {}
+                    for k, v in parsed.items():
+                        if v is not None and isinstance(v, (int, float)):
+                            val_float = float(v)
+                            unit = "%" if k == "hba1c" else ("mmHg" if "bp_" in k else "mg/dL")
+                            results[k] = ExtractedBiomarkerItem(
+                                name=name_map.get(k, k.replace("_", " ").title()),
+                                canonical_key=k,
+                                value=val_float,
+                                unit=unit,
+                                confidence="high",
+                                source_snippet="Extracted via intelligent AI document parser"
+                            )
+                    if results:
+                        return results
+        except Exception as e:
+            logger.warning(f"Gemini text extraction attempt failed with key ending in ...{g_key[-6:]}: {e}")
+
+    # Fallback to OpenAI if configured
+    if openai_key:
+        try:
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {openai_key}"}
+            payload = {
+                "model": "gpt-4o-mini",
+                "temperature": 0.0,
+                "response_format": {"type": "json_object"},
+                "messages": [{"role": "user", "content": prompt_instruction}]
+            }
+            with httpx.Client(timeout=6.0) as client:
+                res = client.post(url, json=payload, headers=headers)
+                if res.status_code == 200:
+                    raw = res.json()["choices"][0]["message"]["content"]
+                    parsed = json.loads(raw)
+                    results = {}
+                    for k, v in parsed.items():
+                        if v is not None and isinstance(v, (int, float)):
+                            val_float = float(v)
+                            unit = "%" if k == "hba1c" else ("mmHg" if "bp_" in k else "mg/dL")
+                            results[k] = ExtractedBiomarkerItem(
+                                name=name_map.get(k, k.replace("_", " ").title()),
+                                canonical_key=k,
+                                value=val_float,
+                                unit=unit,
+                                confidence="high",
+                                source_snippet="Extracted via intelligent AI document parser"
+                            )
+                    if results:
+                        return results
+        except Exception as e:
+            logger.warning(f"OpenAI text extraction failed: {e}")
+
+    return {}
 
 
 async def extract_via_vision_llm_grounded(
@@ -353,18 +485,13 @@ async def extract_via_vision_llm_grounded(
     raw_ocr_text: str = ""
 ) -> Dict[str, ExtractedBiomarkerItem]:
     """
-    Optional fallback behind settings.ENABLE_VISION_LLM_EXTRACTION.
-    Returns JSON from Gemini Vision / OpenAI Vision at temperature 0.
-    Strict Grounding Check: Every returned number must appear verbatim in the source image or OCR text;
-    otherwise it is discarded.
+    Multimodal Vision LLM extraction for scanned PDFs, photos, and PNG/JPG images.
+    Tries GEMINI_API_KEY, then automatically falls back to GOOGLE_API_KEY.
     """
-    if not settings.ENABLE_VISION_LLM_EXTRACTION:
-        return {}
-
-    gemini_key = settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
+    gemini_keys = [k for k in [settings.GEMINI_API_KEY, settings.GOOGLE_API_KEY] if k]
     openai_key = settings.OPENAI_API_KEY
 
-    prompt_instruction = """Extract clinical lab values from this lab report image.
+    prompt_instruction = """Extract clinical lab values from this lab report image/document.
 Return valid JSON ONLY matching this exact structure:
 {
   "fasting_glucose": number or null,
@@ -381,78 +508,106 @@ Return valid JSON ONLY matching this exact structure:
 Ensure all values are in canonical units (mg/dL for lipids and glucose, % for HbA1c, mmHg for BP).
 Output JSON only. Do not add explanations."""
 
-    detected: Dict[str, ExtractedBiomarkerItem] = {}
+    name_map = {
+        "fasting_glucose": "Fasting Blood Glucose",
+        "random_glucose": "Random Blood Glucose",
+        "postprandial_glucose": "Post-Prandial Blood Glucose",
+        "hba1c": "Hemoglobin A1c (HbA1c)",
+        "total_cholesterol": "Total Cholesterol",
+        "ldl_cholesterol": "LDL Cholesterol",
+        "hdl_cholesterol": "HDL Cholesterol",
+        "triglycerides": "Triglycerides",
+        "bp_systolic": "Systolic Blood Pressure",
+        "bp_diastolic": "Diastolic Blood Pressure"
+    }
 
     try:
         b64_img = base64.b64encode(image_bytes).decode("utf-8")
-        parsed_json: Dict[str, Any] = {}
 
-        if gemini_key:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {"text": prompt_instruction},
-                            {"inline_data": {"mime_type": mime_type, "data": b64_img}}
-                        ]
-                    }
-                ],
-                "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
-            }
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == 200:
-                    text_out = res.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    parsed_json = json.loads(text_out)
-        elif openai_key:
-            url = "https://api.openai.com/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {openai_key}"}
-            payload = {
-                "model": "gpt-4o-mini",
-                "temperature": 0.0,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_instruction},
-                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}}
-                        ]
-                    }
-                ]
-            }
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                res = await client.post(url, json=payload, headers=headers)
-                if res.status_code == 200:
-                    text_out = res.json()["choices"][0]["message"]["content"]
-                    parsed_json = json.loads(text_out)
+        for g_key in gemini_keys:
+            try:
+                url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+                headers = {"x-goog-api-key": g_key}
+                payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {"text": prompt_instruction},
+                                {"inline_data": {"mime_type": mime_type, "data": b64_img}}
+                            ]
+                        }
+                    ],
+                    "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
+                }
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    res = await client.post(url, json=payload, headers=headers)
+                    if res.status_code == 200:
+                        text_out = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                        parsed_json = json.loads(text_out)
+                        results = {}
+                        for k, v in parsed_json.items():
+                            if v is not None and isinstance(v, (int, float)):
+                                val_float = float(v)
+                                unit = "%" if k == "hba1c" else ("mmHg" if "bp_" in k else "mg/dL")
+                                results[k] = ExtractedBiomarkerItem(
+                                    name=name_map.get(k, k.replace("_", " ").title()),
+                                    canonical_key=k,
+                                    value=val_float,
+                                    unit=unit,
+                                    confidence="medium",
+                                    source_snippet="Extracted via AI Vision Pipeline"
+                                )
+                        if results:
+                            return results
+            except Exception as ge:
+                logger.warning(f"Gemini Vision extraction failed with key ending in ...{g_key[-6:]}: {ge}")
 
-        # STRICT GROUNDING VERIFICATION:
-        # Every returned number must appear verbatim in the source OCR text layer if text is available
-        for k, v in parsed_json.items():
-            if v is not None and isinstance(v, (int, float)):
-                val_float = float(v)
-                val_int = int(val_float)
-                # If raw OCR text is present, verify grounding
-                if raw_ocr_text:
-                    if str(val_float) not in raw_ocr_text and str(val_int) not in raw_ocr_text:
-                        logger.warning(f"Discarding ungrounded LLM extracted value: {k}={v}")
-                        continue
+        # Fallback to OpenAI Vision if configured
+        if openai_key:
+            try:
+                url = "https://api.openai.com/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {openai_key}"}
+                payload = {
+                    "model": "gpt-4o-mini",
+                    "temperature": 0.0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_instruction},
+                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}}
+                            ]
+                        }
+                    ]
+                }
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    res = await client.post(url, json=payload, headers=headers)
+                    if res.status_code == 200:
+                        text_out = res.json()["choices"][0]["message"]["content"]
+                        parsed_json = json.loads(text_out)
+                        results = {}
+                        for k, v in parsed_json.items():
+                            if v is not None and isinstance(v, (int, float)):
+                                val_float = float(v)
+                                unit = "%" if k == "hba1c" else ("mmHg" if "bp_" in k else "mg/dL")
+                                results[k] = ExtractedBiomarkerItem(
+                                    name=name_map.get(k, k.replace("_", " ").title()),
+                                    canonical_key=k,
+                                    value=val_float,
+                                    unit=unit,
+                                    confidence="medium",
+                                    source_snippet="Extracted via AI Vision Pipeline"
+                                )
+                        if results:
+                            return results
+            except Exception as oe:
+                logger.warning(f"OpenAI Vision extraction failed: {oe}")
 
-                unit = "%" if k == "hba1c" else ("mmHg" if "bp_" in k else "mg/dL")
-                detected[k] = ExtractedBiomarkerItem(
-                    name=k.replace("_", " ").title(),
-                    canonical_key=k,
-                    value=val_float,
-                    unit=unit,
-                    confidence="medium",
-                    source_snippet="Extracted via grounded Vision LLM fallback"
-                )
     except Exception as e:
         logger.warning(f"Vision LLM extraction fallback encountered an error: {e}")
 
-    return detected
+    return {}
 
 
 def process_lab_document_in_memory(
@@ -463,7 +618,11 @@ def process_lab_document_in_memory(
 ) -> LabExtractionResponse:
     """
     Synchronous extraction pipeline designed to run in a worker thread (asyncio.to_thread).
-    Zero disk retention: memory is released immediately after extraction.
+    Multi-stage extraction:
+    1. Digital text extraction (PDF / OCR)
+    2. Rule-based regex extraction
+    3. Intelligent AI text extraction (for digital PDFs with complex layouts)
+    4. Multimodal AI Vision extraction (for scanned PDFs & images without OCR)
     """
     is_pdf = mime_type == "application/pdf"
     extracted_text = ""
@@ -483,13 +642,20 @@ def process_lab_document_in_memory(
         extracted_text = ocr_image_file(file_bytes)
         source_conf = "medium"
 
-    # Step 2: Rule-Based Extraction
+    # Step 2: Rule-Based Regex Extraction
     detected_markers, unclear_glucose = extract_biomarkers_rule_based(extracted_text, source_confidence=source_conf)
 
-    # Step 3: Optional Vision LLM Fallback (if enabled and markers are sparse)
-    if not detected_markers and settings.ENABLE_VISION_LLM_EXTRACTION:
-        logger.info("Attempting Vision LLM fallback extraction...")
-        # Run vision LLM extraction synchronously
+    # Step 3: AI Text Extraction (if rule-based found few or no markers but text exists)
+    if len(detected_markers) < 2 and len(extracted_text.strip()) >= 15:
+        logger.info("Rule-based extraction returned sparse results; using AI document parser...")
+        ai_markers = extract_via_llm_text(extracted_text)
+        for k, v in ai_markers.items():
+            if k not in detected_markers:
+                detected_markers[k] = v
+
+    # Step 4: Multimodal AI Vision Fallback (for scanned PDFs or images where local OCR was unavailable)
+    if not detected_markers:
+        logger.info("No markers found via text/OCR; attempting Vision AI extraction...")
         loop = asyncio.new_event_loop()
         try:
             detected_markers = loop.run_until_complete(

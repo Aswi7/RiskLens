@@ -12,8 +12,8 @@ def get_database():
     return db.db
 
 async def connect_to_mongo():
-    """Initializes the MongoDB Async Client using Motor with a 2-second timeout and ensures unique indexes."""
-    db.client = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=2000)
+    """Initializes the MongoDB Async Client using Motor with a 5-second timeout and ensures unique indexes."""
+    db.client = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=5000)
     db.db = db.client[settings.MONGO_DB_NAME]
     try:
         await db.db.users.create_index("email", unique=True)

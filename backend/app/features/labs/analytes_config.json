@@ -79,6 +79,7 @@
         "hemoglobin\\s+a1c",
         "glycated\\s+hemoglobin",
         "glycohemoglobin",
+        "\\bhb\\s*a1c\\b",
         "\\bhba1c\\b",
         "\\ba1c\\b"
       ],

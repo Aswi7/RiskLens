@@ -3,10 +3,20 @@ import api from '../services/api';
 
 const AuthContext = createContext(undefined);
 
+const formatUserData = (data) => {
+  if (!data) return null;
+  const name = data.full_name || data.name || (data.email ? data.email.split('@')[0].replace(/^\w/, (c) => c.toUpperCase()) : 'User');
+  return {
+    ...data,
+    name,
+    full_name: data.full_name || name
+  };
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('risklens_user');
-    return saved ? JSON.parse(saved) : null;
+    return saved ? formatUserData(JSON.parse(saved)) : null;
   });
   const [loading, setLoading] = useState(true);
 
@@ -17,8 +27,9 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const res = await api.get('/auth/me');
-          setUser(res.data);
-          localStorage.setItem('risklens_user', JSON.stringify(res.data));
+          const formatted = formatUserData(res.data);
+          setUser(formatted);
+          localStorage.setItem('risklens_user', JSON.stringify(formatted));
         } catch {
           // Token is expired or invalid
           localStorage.removeItem('token');
@@ -41,7 +52,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
 
     const meRes = await api.get('/auth/me');
-    const userData = meRes.data;
+    const userData = formatUserData(meRes.data);
     setUser(userData);
     localStorage.setItem('risklens_user', JSON.stringify(userData));
     return true;
@@ -62,7 +73,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
 
     const meRes = await api.get('/auth/me');
-    const userData = meRes.data;
+    const userData = formatUserData(meRes.data);
     setUser(userData);
     localStorage.setItem('risklens_user', JSON.stringify(userData));
     return true;
@@ -93,7 +104,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('token', token);
 
     const meRes = await api.get('/auth/me');
-    const userData = meRes.data;
+    const userData = formatUserData(meRes.data);
     setUser(userData);
     localStorage.setItem('risklens_user', JSON.stringify(userData));
     return userData;

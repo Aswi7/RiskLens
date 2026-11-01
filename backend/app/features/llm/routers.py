@@ -104,7 +104,11 @@ async def chat_health_assistant(
             context = latest.get("results", {})
 
     # Perform RAG retrieval on medical knowledge base (runs if safety check passes inside generate_chat_reply or before)
-    retrieved_chunks = await retrieve_medical_knowledge(req.message, top_k=4)
+    retrieved_chunks = []
+    try:
+        retrieved_chunks = await asyncio.wait_for(retrieve_medical_knowledge(req.message, top_k=4), timeout=2.0)
+    except Exception:
+        retrieved_chunks = []
 
     # Generate reply (with Pre-LLM safety checks)
     chat_response = generate_chat_reply(

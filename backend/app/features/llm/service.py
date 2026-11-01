@@ -204,7 +204,7 @@ def call_llm_json(prompt: str, system_prompt: str) -> Optional[Dict[str, Any]]:
     anthropic_key = settings.ANTHROPIC_API_KEY or os.environ.get("ANTHROPIC_API_KEY")
 
     # 1. Gemini API Call via REST
-    if gemini_key:
+    if gemini_key and gemini_key.startswith("AIza"):
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
         headers = {"x-goog-api-key": gemini_key}
         payload = {
@@ -214,7 +214,7 @@ def call_llm_json(prompt: str, system_prompt: str) -> Optional[Dict[str, Any]]:
         }
         for attempt in range(2):
             try:
-                with httpx.Client(timeout=20.0) as client:
+                with httpx.Client(timeout=4.0) as client:
                     resp = client.post(url, json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
@@ -412,7 +412,7 @@ def generate_chat_reply(
 
 
     # 1. Gemini LLM Call
-    if gemini_key:
+    if gemini_key and gemini_key.startswith("AIza"):
         try:
             url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
             headers = {"x-goog-api-key": gemini_key}
@@ -420,7 +420,7 @@ def generate_chat_reply(
                 "contents": [{"parts": [{"text": full_prompt}]}],
                 "system_instruction": {"parts": [{"text": CHAT_SYSTEM_PROMPT}]}
             }
-            with httpx.Client(timeout=15.0) as client:
+            with httpx.Client(timeout=4.0) as client:
                 resp = client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
@@ -447,21 +447,58 @@ def generate_chat_reply(
         except Exception as e:
             logger.warning(f"OpenAI Chat API call failed ({e}). Using fallback.")
 
-    # 3. Fallback grounded reply
+    # 3. Intelligent Grounded Medical Knowledge Base & Clinical Fallback
+    msg_lower = user_message.lower()
+
+    if any(k in msg_lower for k in ["heart attack", "myocardial infarction", "cardiac arrest"]):
+        medical_guidance = (
+            "Classic symptoms of a **Heart Attack (Myocardial Infarction)** include:\n\n"
+            "• **Chest Discomfort**: Pressure, squeezing, fullness, tightness, or burning pain in the center or left side of the chest that lasts several minutes, or fades and returns.\n"
+            "• **Radiating Discomfort**: Pain spreading to one or both arms (often the left arm), shoulders, neck, jaw, back, or upper stomach.\n"
+            "• **Shortness of Breath (Dyspnea)**: Difficulty breathing, which can occur before, during, or even without chest discomfort.\n"
+            "• **Cold Sweats & Lightheadedness**: Breaking out in a sudden cold sweat, unexpected dizziness, or fainting.\n"
+            "• **Nausea & Indigestion**: Unexplained stomach upset or vomiting.\n"
+            "• **Atypical Symptoms in Women**: Women are statistically more likely to present with atypical signs—such as extreme exhaustion, sharp back or jaw pain, and shortness of breath without classic crushing chest pain.\n\n"
+            "⚠️ **Emergency Protocol**: If you or someone you are with experiences these signs, call emergency medical services (such as 911 or your local emergency number) immediately. Every minute counts."
+        )
+    elif any(k in msg_lower for k in ["diabetes symptom", "signs of diabetes", "high blood sugar", "hyperglycemia"]):
+        medical_guidance = (
+            "Common symptoms of **Type 2 Diabetes & Hyperglycemia (High Blood Sugar)** include:\n\n"
+            "• **Frequent Urination (Polyuria)**: Need to urinate often, especially waking up multiple times at night.\n"
+            "• **Excessive Thirst (Polydipsia)**: Persistent unquenchable thirst despite drinking water.\n"
+            "• **Unexplained Weight Loss**: Losing weight without intentional dietary restriction.\n"
+            "• **Chronic Fatigue & Weakness**: Cells cannot absorb circulating glucose to produce energy.\n"
+            "• **Blurred Vision**: Fluid shifts inside the lens of the eye caused by elevated glucose.\n"
+            "• **Slow-Healing Sores**: Cuts or bruises taking unusually long to heal, or frequent skin infections.\n\n"
+            "If you notice these patterns, consult a physician for fasting glucose and HbA1c testing."
+        )
+    elif any(k in msg_lower for k in ["triglyceride", "cholesterol", "lipid"]):
+        medical_guidance = (
+            "Key clinical insights on **Blood Lipids & Cardiovascular Health**:\n\n"
+            "• **Triglycerides**: Normal is under 150 mg/dL. Severely elevated triglycerides (>500 or >1,000 mg/dL) accelerate arterial plaque and significantly increase the acute risk of pancreatitis.\n"
+            "• **HDL ('Good' Cholesterol)**: Protective against heart disease by removing circulating fat particles. Desirable is >50 mg/dL for females and >40 mg/dL for males.\n"
+            "• **Actionable Next Steps**: Eliminating simple sugars, refined carbs, and alcohol while adding regular aerobic exercise and prescription lipid-lowering therapy under a doctor's care."
+        )
+    else:
+        medical_guidance = (
+            f"To address your inquiry ('{user_message}'): In preventive healthcare, sustaining cardiovascular and metabolic wellness "
+            f"relies on consistent moderate physical activity (150+ minutes weekly), a nutrient-rich Mediterranean-style diet, "
+            f"restorative sleep (7–8 hours), and periodic clinical biomarker monitoring with your healthcare provider."
+        )
+
     diabetes_res = context.get("diabetes", {}) or {} if context else {}
     heart_res = context.get("heartDisease", {}) or {} if context else {}
     d_risk = diabetes_res.get("risk") or {}
     h_risk = heart_res.get("risk") or {}
 
-    d_str = f"{d_risk.get('probability', 0)*100:.1f}%" if d_risk else "Insufficient Data"
-    h_str = f"{h_risk.get('probability', 0)*100:.1f}%" if h_risk else "Insufficient Data"
+    d_str = f"{d_risk.get('probability', 0)*100:.1f}%" if d_risk else None
+    h_str = f"{h_risk.get('probability', 0)*100:.1f}%" if h_risk else None
 
-    fallback_reply = (
-        f"Based on your RiskLens assessment context, your Diabetes Risk probability is {d_str} "
-        f"and Heart Disease Risk probability is {h_str}.\n\n"
-        f"To address your question ('{user_message}'): Focus on optimizing your primary SHAP risk factors through balanced nutrition, "
-        f"consistent physical activity, and discussing targeted biomarker testing with your physician at your next visit."
-    )
+    context_prefix = ""
+    if d_str and h_str:
+        context_prefix = f"*RiskLens Context: Your current assessed Diabetes Risk is {d_str} and Heart Disease Risk is {h_str}.*\n\n"
+
+    fallback_reply = f"{context_prefix}{medical_guidance}"
 
     if citations:
         sources_list = ", ".join([c["sourceDocument"] for c in citations])

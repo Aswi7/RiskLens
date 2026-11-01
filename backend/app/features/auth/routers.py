@@ -100,7 +100,8 @@ async def login(request: Request):
         )
     user = await db.users.find_one({"email": email})
 
-    if not user or not verify_password(password, user["password"]):
+    user_pwd = user.get("password") or user.get("hashed_password") if user else None
+    if not user or not user_pwd or not verify_password(password, user_pwd):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

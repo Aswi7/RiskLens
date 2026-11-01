@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, ArrowRight, ArrowLeft, Check, Sparkles, Upload, Watch, Lock, AlertCircle, Plus, X, Search, ShieldCheck, HeartPulse } from 'lucide-react';
 import api from '../services/api';
@@ -96,6 +96,33 @@ export const AssessmentPage = () => {
     wearableSynced: false,
     restingHeartRate: '72',
   });
+
+  // Auto-populate clinical vitals from latest confirmed lab report if available
+  useEffect(() => {
+    const loadLatestLabReport = async () => {
+      try {
+        const res = await api.get('/lab-reports');
+        const confirmedReport = res.data?.reports?.find(r => r.status === 'confirmed');
+        if (confirmedReport && confirmedReport.extracted_markers) {
+          const m = confirmedReport.extracted_markers;
+          setFormData(prev => ({
+            ...prev,
+            totalCholesterol: m.total_cholesterol?.value !== undefined ? String(m.total_cholesterol.value) : prev.totalCholesterol,
+            triglycerides: m.triglycerides?.value !== undefined ? String(m.triglycerides.value) : prev.triglycerides,
+            hdl: m.hdl_cholesterol?.value !== undefined ? String(m.hdl_cholesterol.value) : prev.hdl,
+            ldl: m.ldl_cholesterol?.value !== undefined ? String(m.ldl_cholesterol.value) : prev.ldl,
+            glucose: m.fasting_glucose?.value !== undefined ? String(m.fasting_glucose.value) : prev.glucose,
+            fastingGlucose: m.fasting_glucose?.value !== undefined ? String(m.fasting_glucose.value) : prev.fastingGlucose,
+            hba1c: m.hba1c?.value !== undefined ? String(m.hba1c.value) : prev.hba1c,
+            labReportUploaded: true
+          }));
+        }
+      } catch (e) {
+        console.warn('Could not auto-populate from latest lab report:', e);
+      }
+    };
+    loadLatestLabReport();
+  }, []);
 
   // Dynamic BMI Calculation
   const heightM = parseFloat(formData.height) / 100 || 0;

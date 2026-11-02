@@ -12,22 +12,45 @@ from typing import Dict, Any, List, Optional, Tuple
 
 import httpx
 from pypdf import PdfReader
-try:
-    import fitz  # PyMuPDF
-except ImportError:
-    fitz = None
 
-try:
-    from PIL import Image, ImageOps, ImageFilter
-except ImportError:
-    Image = None
-    ImageOps = None
-    ImageFilter = None
+# Lazy-loaded modules for OCR and advanced PDF rasterization
+# Defers importing PyMuPDF (~82MB), Pillow, and pytesseract until an actual file upload occurs
+_fitz_mod = None
+_pil_mods = None
+_pytesseract_mod = None
 
-try:
-    import pytesseract
-except ImportError:
-    pytesseract = None
+
+def get_fitz():
+    global _fitz_mod
+    if _fitz_mod is None:
+        try:
+            import fitz
+            _fitz_mod = fitz
+        except ImportError:
+            _fitz_mod = False
+    return _fitz_mod if _fitz_mod is not False else None
+
+
+def get_pil():
+    global _pil_mods
+    if _pil_mods is None:
+        try:
+            from PIL import Image, ImageOps, ImageFilter
+            _pil_mods = (Image, ImageOps, ImageFilter)
+        except ImportError:
+            _pil_mods = False
+    return _pil_mods if _pil_mods is not False else (None, None, None)
+
+
+def get_pytesseract():
+    global _pytesseract_mod
+    if _pytesseract_mod is None:
+        try:
+            import pytesseract
+            _pytesseract_mod = pytesseract
+        except ImportError:
+            _pytesseract_mod = False
+    return _pytesseract_mod if _pytesseract_mod is not False else None
 
 from app.core.config import settings
 from app.features.labs.schemas import (
@@ -99,6 +122,7 @@ def verify_file_signature(file_bytes: bytes, filename: str) -> Tuple[bool, str, 
 
 def get_pdf_page_count(file_bytes: bytes) -> int:
     """Determines page count of a PDF using PyMuPDF or pypdf."""
+    fitz = get_fitz()
     if fitz:
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -123,6 +147,7 @@ def extract_text_layer_from_pdf(file_bytes: bytes) -> Tuple[str, int]:
     page_count = 1
 
     # 1. Try PyMuPDF (fitz)
+    fitz = get_fitz()
     if fitz:
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -153,6 +178,7 @@ def extract_text_layer_from_pdf(file_bytes: bytes) -> Tuple[str, int]:
 
 def preprocess_image_for_ocr(pil_img: Any) -> Any:
     """Preprocesses an image for OCR: grayscale, contrast enhancement, and thresholding."""
+    Image, ImageOps, ImageFilter = get_pil()
     if not Image or not pil_img:
         return pil_img
     try:
@@ -172,6 +198,9 @@ def ocr_rasterized_pdf(file_bytes: bytes) -> str:
     """
     Rasterises PDF pages and executes OCR using Tesseract when digital text layer is missing.
     """
+    fitz = get_fitz()
+    pytesseract = get_pytesseract()
+    Image, _, _ = get_pil()
     if not fitz or not pytesseract or not Image:
         return ""
 
@@ -195,6 +224,8 @@ def ocr_rasterized_pdf(file_bytes: bytes) -> str:
 
 def ocr_image_file(file_bytes: bytes) -> str:
     """Executes OCR on an uploaded image file (PNG / JPG)."""
+    pytesseract = get_pytesseract()
+    Image, _, _ = get_pil()
     if not pytesseract or not Image:
         return ""
     try:

@@ -264,11 +264,14 @@ export const DashboardPage = () => {
       ]);
     } catch (err) {
       console.error('Error in chat API:', err);
+      const isOffline = !err.response;
       setChatMessages((prev) => [
         ...prev,
         {
           sender: 'ai',
-          text: 'I encountered an issue connecting to the health assistant. Please try asking your question again.',
+          text: isOffline
+            ? 'Cannot connect to the RiskLens backend server. Please verify that the backend is running on port 8000.'
+            : (err.response?.data?.detail || 'I encountered an issue connecting to the health assistant. Please try asking your question again.'),
           time: 'Just now'
         }
       ]);

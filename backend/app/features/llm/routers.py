@@ -99,10 +99,14 @@ async def chat_health_assistant(
 
     # Load latest prediction context if not provided
     if not context:
-        db = get_database()
-        latest = await db.predictions.find_one({"user_id": current_user["id"]}, sort=[("timestamp", -1)])
-        if latest:
-            context = latest.get("results", {})
+        try:
+            db = get_database()
+            if db is not None:
+                latest = await db.predictions.find_one({"user_id": current_user["id"]}, sort=[("timestamp", -1)])
+                if latest:
+                    context = latest.get("results", {})
+        except Exception as e:
+            logger.warning(f"Failed to fetch latest prediction context: {e}")
 
     # Perform RAG retrieval on medical knowledge base (runs if safety check passes inside generate_chat_reply or before)
     retrieved_chunks = []
@@ -112,26 +116,49 @@ async def chat_health_assistant(
         retrieved_chunks = []
 
     # Generate reply (with Pre-LLM safety checks in separate thread to keep asyncio event loop free)
-    chat_response = await asyncio.to_thread(
-        generate_chat_reply,
-        user_message=req.message,
-        history=req.history or [],
-        context=context or {},
-        retrieved_chunks=retrieved_chunks
-    )
+    try:
+        chat_response = await asyncio.to_thread(
+            generate_chat_reply,
+            user_message=req.message,
+            history=req.history or [],
+            context=context or {},
+            retrieved_chunks=retrieved_chunks
+        )
+    except Exception as e:
+        logger.error(f"Error generating chat reply: {e}", exc_info=True)
+        # Fallback response so user never gets a 500 error
+        from app.features.llm.service import generate_chat_reply as gen_fallback
+        chat_response = gen_fallback(
+            user_message=req.message,
+            history=[],
+            context={},
+            retrieved_chunks=[]
+        )
 
     # Persist exchange to MongoDB chatMessages collection with citations & RAG audit log
-    db = get_database()
-    chat_doc = {
-        "user_id": current_user["id"],
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "user_message": req.message,
-        "assistant_reply": chat_response.reply,
-        "is_emergency": chat_response.isEmergency,
-        "skipped_llm": chat_response.skippedLLM,
-        "citations": [c.get("sourceDocument") for c in (chat_response.citations or [])],
-        "retrieved_chunk_count": len(retrieved_chunks) if not chat_response.skippedLLM else 0
-    }
-    await db.chatMessages.insert_one(chat_doc)
+    try:
+        db = get_database()
+        if db is not None:
+            user_id = current_user.get("id") or str(current_user.get("_id", "anonymous"))
+            citations_list = []
+            for c in (chat_response.citations or []):
+                if isinstance(c, dict):
+                    citations_list.append(c.get("sourceDocument", ""))
+                else:
+                    citations_list.append(str(c))
+
+            chat_doc = {
+                "user_id": user_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "user_message": req.message,
+                "assistant_reply": chat_response.reply,
+                "is_emergency": chat_response.isEmergency,
+                "skipped_llm": chat_response.skippedLLM,
+                "citations": citations_list,
+                "retrieved_chunk_count": len(retrieved_chunks) if not chat_response.skippedLLM else 0
+            }
+            await db.chatMessages.insert_one(chat_doc)
+    except Exception as e:
+        logger.warning(f"Failed to persist chat message to MongoDB: {e}")
 
     return chat_response

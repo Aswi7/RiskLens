@@ -472,7 +472,7 @@ export const AssessmentPage = () => {
       navigate('/dashboard');
     } catch (err) {
       console.error('Failed to submit prediction:', err);
-      setErrorMsg(err.response?.data?.detail || 'Failed to submit health assessment to backend API. Ensure backend server is running on http://localhost:8000.');
+      setErrorMsg(err.response?.data?.detail || 'Failed to submit health assessment to backend API. Please check your network connection and try again.');
     } finally {
       setIsSubmitting(false);
     }

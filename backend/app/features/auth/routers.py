@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import httpx
@@ -99,6 +100,15 @@ async def login(request: Request):
             detail="Database connection unavailable"
         )
     user = await db.users.find_one({"email": email})
+    if not user and "@" not in email:
+        user = await db.users.find_one({
+            "$or": [
+                {"email": f"{email}@gmail.com"},
+                {"email": {"$regex": f"^{re.escape(email)}@", "$options": "i"}},
+                {"full_name": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}
+            ]
+        })
+
 
     user_pwd = user.get("password") or user.get("hashed_password") if user else None
     if not user or not user_pwd or not verify_password(password, user_pwd):
@@ -269,6 +279,15 @@ async def google_auth(request_data: GoogleAuthRequest):
 
     # Check if user already exists — Google sign-in is only for existing accounts
     user = await db.users.find_one({"email": email})
+    if not user and "@" not in email:
+        user = await db.users.find_one({
+            "$or": [
+                {"email": f"{email}@gmail.com"},
+                {"email": {"$regex": f"^{re.escape(email)}@", "$options": "i"}},
+                {"full_name": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}
+            ]
+        })
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

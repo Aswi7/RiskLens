@@ -2,20 +2,20 @@ import asyncio
 import logging
 import numpy as np
 from typing import List, Dict, Any, Optional
-from sentence_transformers import SentenceTransformer
 from app.db.mongodb import get_database
 
 logger = logging.getLogger("risklens.rag")
 
-# Model loaded once globally on server startup
+# Model loaded once globally on demand (lazy loading prevents importing PyTorch at startup)
 MODEL_NAME = "all-MiniLM-L6-v2"
-_embedder: Optional[SentenceTransformer] = None
+_embedder: Any = None
 
 
-def get_embedder() -> SentenceTransformer:
+def get_embedder() -> Any:
     global _embedder
     if _embedder is None:
         logger.info(f"Loading RAG embedding model ({MODEL_NAME})...")
+        from sentence_transformers import SentenceTransformer
         _embedder = SentenceTransformer(MODEL_NAME)
     return _embedder
 

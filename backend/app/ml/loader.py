@@ -1,7 +1,6 @@
 import os
 import json
 import joblib
-import shap
 import numpy as np
 import logging
 from pathlib import Path
@@ -14,14 +13,35 @@ class MLLoader:
     diabetes_model: Any = None
     diabetes_scaler: Any = None
     diabetes_meta: Dict[str, Any] = {}
-    diabetes_explainer: Any = None
+    _diabetes_explainer: Any = None
 
     heart_model: Any = None
     heart_scaler: Any = None
     heart_meta: Dict[str, Any] = {}
-    heart_explainer: Any = None
+    _heart_explainer: Any = None
 
     loaded: bool = False
+
+    @property
+    def diabetes_explainer(self) -> Any:
+        if self._diabetes_explainer is None:
+            if not self.loaded:
+                self.load_artifacts()
+            import shap
+            self._diabetes_explainer = shap.TreeExplainer(self.diabetes_model)
+            logger.info("Diabetes SHAP TreeExplainer initialized on demand.")
+        return self._diabetes_explainer
+
+    @property
+    def heart_explainer(self) -> Any:
+        if self._heart_explainer is None:
+            if not self.loaded:
+                self.load_artifacts()
+            import shap
+            h_masker = shap.maskers.Independent(data=np.zeros((1, 10)))
+            self._heart_explainer = shap.LinearExplainer(self.heart_model, masker=h_masker)
+            logger.info("Heart Disease SHAP LinearExplainer initialized on demand.")
+        return self._heart_explainer
 
     @classmethod
     def resolve_models_dir(cls) -> Path:
@@ -50,7 +70,7 @@ class MLLoader:
 
     @classmethod
     def load_artifacts(cls):
-        """Loads models, scalers, metadata configs, and initializes SHAP explainers once at startup."""
+        """Loads models, scalers, and metadata configs into memory once at startup."""
         if cls.loaded:
             return
 
@@ -62,25 +82,27 @@ class MLLoader:
             cls.diabetes_meta = json.load(f)
 
         cls.diabetes_model = joblib.load(models_dir / "diabetes_model.joblib")
+        if hasattr(cls.diabetes_model, "n_jobs"):
+            try:
+                cls.diabetes_model.n_jobs = 1
+            except Exception:
+                pass
         cls.diabetes_scaler = joblib.load(models_dir / "diabetes_scaler.joblib")
-
-        # Initialize Diabetes SHAP TreeExplainer
-        cls.diabetes_explainer = shap.TreeExplainer(cls.diabetes_model)
-        logger.info("Diabetes model (XGBoost) and SHAP TreeExplainer loaded successfully.")
+        logger.info("Diabetes model (XGBoost) and scaler loaded successfully.")
 
         # Load Heart Disease metadata & artifacts
         with open(models_dir / "heart_meta.json", "r", encoding="utf-8") as f:
             cls.heart_meta = json.load(f)
 
         cls.heart_model = joblib.load(models_dir / "heart_model.joblib")
+        if hasattr(cls.heart_model, "n_jobs"):
+            try:
+                cls.heart_model.n_jobs = 1
+            except Exception:
+                pass
         cls.heart_scaler = joblib.load(models_dir / "heart_scaler.joblib")
-
-        # Initialize Heart Disease SHAP LinearExplainer
-        # Uses Independent masker over 10 encoded features
-        h_masker = shap.maskers.Independent(data=np.zeros((1, 10)))
-        cls.heart_explainer = shap.LinearExplainer(cls.heart_model, masker=h_masker)
-        logger.info("Heart Disease model (LogisticRegression) and SHAP LinearExplainer loaded successfully.")
+        logger.info("Heart Disease model (LogisticRegression) and scaler loaded successfully.")
 
         cls.loaded = True
 
-ml_loader = MLLoader
+ml_loader = MLLoader()

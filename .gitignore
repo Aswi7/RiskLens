@@ -19,6 +19,8 @@ ENV/
 
 # Saved models
 *.joblib
+!ml_models/trained_models/*.joblib
+!backend/ml_models/trained_models/*.joblib
 !ml_models/trained_models/*.json
 !ml_models/trained_models/.gitkeep
 

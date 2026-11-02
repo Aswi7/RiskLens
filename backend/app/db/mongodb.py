@@ -21,7 +21,10 @@ async def connect_to_mongo():
         connectTimeoutMS=5000,
         serverSelectionTimeoutMS=5000,
     )
-    db.db = db.client[settings.MONGO_DB_NAME]
+    db_name = (settings.MONGO_DB_NAME or "risklens_db").strip()
+    if "." in db_name:
+        db_name = db_name.split(".")[0].strip() or "risklens_db"
+    db.db = db.client[db_name]
     try:
         await db.db.users.create_index("email", unique=True)
     except Exception:

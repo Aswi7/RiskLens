@@ -2,8 +2,6 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import httpx
-from google.oauth2 import id_token as google_id_token
-from google.auth.transport import requests as google_requests
 from fastapi import APIRouter, HTTPException, status, Request, Depends
 from app.db.mongodb import get_database
 from app.core.config import settings
@@ -143,6 +141,8 @@ def verify_google_id_token(credential: str, expected_client_id: Optional[str] = 
     Validates token signature against Google's public certs, expiration, issuer, and audience.
     """
     try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
         req = google_requests.Request()
         payload = google_id_token.verify_oauth2_token(
             credential,

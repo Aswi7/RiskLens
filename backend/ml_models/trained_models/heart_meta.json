@@ -1,0 +1,56 @@
+{
+  "model_type": "LogisticRegression",
+  "requires_scaling": true,
+  "scaler_file": "heart_scaler.joblib",
+  "features_original": [
+    "age",
+    "sex",
+    "cp",
+    "trestbps",
+    "chol",
+    "fbs",
+    "exang"
+  ],
+  "features_encoded": [
+    "age",
+    "sex",
+    "trestbps",
+    "chol",
+    "fbs",
+    "exang",
+    "cp_0",
+    "cp_1",
+    "cp_2",
+    "cp_3"
+  ],
+  "categorical_encoding": {
+    "cp": "one-hot into cp_0..cp_3"
+  },
+  "decision_threshold": 0.4,
+  "threshold_note": "Tuned on 5-fold out-of-fold predictions (303 rows). At 0.4: precision 0.715, recall 0.819, 25 of 138 cases missed. Chosen to prioritise recall for screening, consistent with the diabetes model.",
+  "target_note": "Source dataset target is inverted (1 = no disease). Flipped so 1 = heart disease before training.",
+  "class_balance_note": "Disease class share in train: 0.455; scale_pos_weight (XGBoost comparison) = 1.200",
+  "model_selection_reasoning": "Logistic Regression and XGBoost compared via 5-fold CV. Logistic Regression had the higher mean ROC-AUC (0.8542 vs 0.8339), consistent with simpler models generalising better on small datasets (303 rows).",
+  "metrics": {
+    "test_roc_auc": 0.8528,
+    "cv_roc_auc_mean": 0.8542,
+    "cv_roc_auc_std": 0.0305,
+    "xgboost_cv_roc_auc_mean": 0.8339,
+    "cv_precision_at_threshold": 0.7152,
+    "cv_recall_at_threshold": 0.8188
+  },
+  "imputation_medians": {
+    "trestbps": 130,
+    "chol": 240,
+    "fbs": 0
+  },
+  "dataset": "UCI Heart Disease (Cleveland), 303 rows",
+  "excluded_features": [
+    "restecg",
+    "thalach",
+    "oldpeak",
+    "slope",
+    "ca",
+    "thal"
+  ]
+}

@@ -26,7 +26,7 @@ class RecommendationResponse(BaseModel):
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"] = Field(..., description="'user' or 'assistant'")
-    content: str = Field(..., max_length=1500, description="Message text content")
+    content: str = Field(..., max_length=10000, description="Message text content")
 
 
 class ChatRequest(BaseModel):

@@ -234,10 +234,11 @@ export const DashboardPage = () => {
 
     try {
       const historyPayload = chatMessages
-        .filter((m) => m.text)
+        .filter((m) => m && m.text && typeof m.text === 'string')
+        .slice(-8)
         .map((m) => ({
           role: m.sender === 'user' ? 'user' : 'assistant',
-          content: m.text
+          content: m.text.slice(0, 2000)
         }));
 
       const res = await api.post(
@@ -265,13 +266,20 @@ export const DashboardPage = () => {
     } catch (err) {
       console.error('Error in chat API:', err);
       const isOffline = !err.response;
+      let errorText = 'I encountered an issue connecting to the health assistant. Please try asking your question again.';
+      if (isOffline) {
+        errorText = 'Cannot connect to the RiskLens backend server. Please verify that the backend is running on port 8000.';
+      } else if (typeof err.response?.data?.detail === 'string') {
+        errorText = err.response.data.detail;
+      } else if (Array.isArray(err.response?.data?.detail)) {
+        errorText = err.response.data.detail.map((d) => d.msg || JSON.stringify(d)).join('; ');
+      }
+
       setChatMessages((prev) => [
         ...prev,
         {
           sender: 'ai',
-          text: isOffline
-            ? 'Cannot connect to the RiskLens backend server. Please verify that the backend is running on port 8000.'
-            : (err.response?.data?.detail || 'I encountered an issue connecting to the health assistant. Please try asking your question again.'),
+          text: errorText,
           time: 'Just now'
         }
       ]);
@@ -913,7 +921,9 @@ export const DashboardPage = () => {
                               <span>ACUTE MEDICAL EMERGENCY WARNING</span>
                             </div>
                           )}
-                          <p className="whitespace-pre-line">{msg.text}</p>
+                          <p className="whitespace-pre-line">
+                            {typeof msg.text === 'string' ? msg.text : JSON.stringify(msg.text)}
+                          </p>
                           {msg.citations && msg.citations.length > 0 && (
                             <div className="mt-2 pt-2 border-t border-slate-200/60 flex flex-wrap gap-1.5 items-center">
                               <span className="text-[10px] font-semibold text-teal-800">Source:</span>

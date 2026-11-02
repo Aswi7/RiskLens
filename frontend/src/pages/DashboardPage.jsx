@@ -289,7 +289,7 @@ export const DashboardPage = () => {
   };
 
   // Process historical trend data from user's actual prediction history (Chronological Ascending)
-  const chronologicalHistory = historyRecords.length > 0
+  const actualHistory = historyRecords.length > 0
     ? historyRecords
         .slice()
         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
@@ -311,6 +311,41 @@ export const DashboardPage = () => {
 
   const diabetesRiskPct = Math.round((predictionData?.diabetes?.risk?.probability || 0) * 100);
   const heartRiskPct = Math.round((predictionData?.heartDisease?.risk?.probability || 0) * 100);
+  const curHealthScore = healthScoreData?.total_score || predictionData?.input_payload?.health_score?.total_score || 78;
+
+  // Support Demo Users & Single Assessment:
+  // If actual multi-assessment history exists (2+ records), use real history.
+  // Otherwise, synthesize a realistic longitudinal trajectory curve so demo presets & new users can immediately explore the trend graph.
+  const isDemoOrSingle = actualHistory.length < 2;
+
+  const demoTrajectoryHistory = [
+    {
+      evaluation: '6 Mo Ago',
+      dateStr: '6 Months Ago',
+      fullDate: 'Baseline Longitudinal Check (6 Months Ago)',
+      diabetesRisk: Math.max(1, Math.min(99, Math.round(diabetesRiskPct > 30 ? diabetesRiskPct - 12 : diabetesRiskPct + 4))),
+      heartRisk: Math.max(1, Math.min(99, Math.round(heartRiskPct > 30 ? heartRiskPct - 15 : heartRiskPct + 6))),
+      healthScore: Math.max(40, Math.min(100, Math.round(curHealthScore > 65 ? curHealthScore - 5 : curHealthScore - 8)))
+    },
+    {
+      evaluation: '3 Mo Ago',
+      dateStr: '3 Months Ago',
+      fullDate: 'Mid-term Assessment (3 Months Ago)',
+      diabetesRisk: Math.max(1, Math.min(99, Math.round(diabetesRiskPct > 30 ? diabetesRiskPct - 6 : diabetesRiskPct + 2))),
+      heartRisk: Math.max(1, Math.min(99, Math.round(heartRiskPct > 30 ? heartRiskPct - 7 : heartRiskPct + 3))),
+      healthScore: Math.max(40, Math.min(100, Math.round(curHealthScore > 65 ? curHealthScore - 2 : curHealthScore - 4)))
+    },
+    {
+      evaluation: 'Current',
+      dateStr: actualHistory[0]?.dateStr || 'Current Assessment',
+      fullDate: actualHistory[0]?.fullDate || 'Latest Evaluation',
+      diabetesRisk: diabetesRiskPct,
+      heartRisk: heartRiskPct,
+      healthScore: curHealthScore
+    }
+  ];
+
+  const chronologicalHistory = isDemoOrSingle ? demoTrajectoryHistory : actualHistory;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
@@ -624,8 +659,13 @@ export const DashboardPage = () => {
                   <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                       <div>
-                        <div className="text-xs font-extrabold text-teal-700 uppercase tracking-wider">
-                          Historical Evaluations ({chronologicalHistory.length} Recorded)
+                        <div className="text-xs font-extrabold text-teal-700 uppercase tracking-wider flex items-center gap-2">
+                          <span>Historical Evaluations ({chronologicalHistory.length} Recorded)</span>
+                          {isDemoOrSingle && (
+                            <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold">
+                              Longitudinal Demo Curve
+                            </span>
+                          )}
                         </div>
                         <h3 className="font-heading text-lg font-bold text-slate-900 mt-0.5">
                           Risk Score Trajectory Over Time
@@ -661,9 +701,14 @@ export const DashboardPage = () => {
                     <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-1">
                       <div className="font-bold text-slate-800">Trajectory Summary:</div>
                       <p>
-                        Baseline Evaluation (Initial): Diabetes Risk {chronologicalHistory[0].diabetesRisk}%, Heart Risk {chronologicalHistory[0].heartRisk}%.
+                        Baseline Evaluation ({chronologicalHistory[0].dateStr}): Diabetes Risk {chronologicalHistory[0].diabetesRisk}%, Heart Risk {chronologicalHistory[0].heartRisk}%.
                         Latest Evaluation ({chronologicalHistory[chronologicalHistory.length - 1].dateStr}): Diabetes Risk {chronologicalHistory[chronologicalHistory.length - 1].diabetesRisk}%, Heart Risk {chronologicalHistory[chronologicalHistory.length - 1].heartRisk}%.
                       </p>
+                      {isDemoOrSingle && (
+                        <p className="text-[11px] text-slate-400 mt-1 italic">
+                          💡 Showing longitudinal trajectory trend curve for demo profile. As you take periodic new assessments, this chart dynamically plots your real historical points.
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : (
